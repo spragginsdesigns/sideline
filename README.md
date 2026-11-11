@@ -37,7 +37,7 @@ If webhooks can't reach the app (for example on localhost), the board also polls
 
 ## How it uses AG Studio
 
-`/studio` is one AG Studio component (`ag-studio-react`) fed by three tables built from the ledger (`src/lib/studio/tables.ts`): family dues, the team ledger, and games with referee payouts.
+`/studio` is one AG Studio component (`ag-studio-react`) fed by four tables built from the ledger (`src/lib/studio/tables.ts`): family dues, the team ledger, spending, and games with referee payouts.
 
 | AG Studio feature | Where |
 |---|---|

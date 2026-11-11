@@ -3,7 +3,7 @@
 // poll is diffed and applied as a transaction, so a PayPal webhook that lands on the server shows up
 // in every widget in place, with no reload.
 import type { AgDataSourcesDefinition, AgFieldDefinition } from "ag-studio";
-import type { DuesRow, GameRow, LedgerRow, StudioTables } from "@/lib/studio/tables";
+import type { DuesRow, GameRow, LedgerRow, SpendingRow, StudioTables } from "@/lib/studio/tables";
 
 const usd = { format: "$#,##0.00" };
 
@@ -40,6 +40,14 @@ export const LEDGER_FIELDS: AgFieldDefinition[] = [
   { id: "recorded_by", name: "Recorded by", format: "textFormat" },
 ] as AgFieldDefinition[];
 
+export const SPENDING_FIELDS: AgFieldDefinition[] = [
+  { id: "id", name: "Entry ID", format: "textFormat", cardinality: "high", notBlank: true, hide: true },
+  { id: "date", name: "Date", format: "dateFormat" },
+  { id: "category", name: "Category", format: "textFormat", description: "What the money was spent on: Referees, Uniforms, League fees or Other." },
+  { id: "amount", name: "Spent", format: "currencyFormat", formatOptions: usd, description: "Dollars spent. Sum it by category for spending by category." },
+  { id: "what", name: "What", format: "textFormat" },
+] as AgFieldDefinition[];
+
 export const GAMES_FIELDS: AgFieldDefinition[] = [
   { id: "id", name: "Game ID", format: "textFormat", cardinality: "high", notBlank: true, hide: true },
   { id: "date", name: "Date", format: "dateFormat" },
@@ -56,7 +64,7 @@ type Row = Record<string, string | number | Date | null>;
 const DATE_KEYS = new Set(["due_date", "paid_date", "date"]);
 
 /** JSON rows -> Studio rows: dates become Date objects (local noon, so a time zone never moves the day). */
-function hydrate(rows: (DuesRow | LedgerRow | GameRow)[]): Row[] {
+function hydrate(rows: (DuesRow | LedgerRow | SpendingRow | GameRow)[]): Row[] {
   return rows.map((r) => {
     const out: Row = {};
     for (const [k, v] of Object.entries(r)) out[k] = DATE_KEYS.has(k) && typeof v === "string" ? new Date(`${v}T12:00:00`) : (v as Row[string]);
@@ -70,6 +78,7 @@ export function toSources(t: StudioTables): AgDataSourcesDefinition {
     sources: [
       { id: "dues", name: "Family dues", description: "One row per family per charge: billed, collected, still owed, status (Paid, Open, Late, Team fund, Covered), how they paid and the PayPal invoice number.", primaryKeyField: "id", transactions: "all", data: hydrate(t.dues), fields: DUES_FIELDS },
       { id: "ledger", name: "Team ledger", description: "One row per movement in the team account: dues paid through PayPal or in cash, referee payouts, expenses, and the balance carried over.", primaryKeyField: "id", transactions: "all", data: hydrate(t.ledger), fields: LEDGER_FIELDS },
+      { id: "spending", name: "Spending", description: "One row per dollar amount the team spent (referee payouts, uniforms, league fees). Only money going out, so no filter is needed: use it for any spending chart.", primaryKeyField: "id", transactions: "all", data: hydrate(t.spending), fields: SPENDING_FIELDS },
       { id: "games", name: "Games & referees", description: "One row per game: the opponent, result, referee, fee, and whether PayPal Payouts has paid the referee.", primaryKeyField: "id", transactions: "all", data: hydrate(t.games), fields: GAMES_FIELDS },
     ],
   };
@@ -87,7 +96,7 @@ const same = (a: Row, b: Row) => Object.keys(b).every((k) => (a[k] instanceof Da
 /** What changed between two polls, per table, as Studio transactions. */
 export function diffTables(prev: StudioTables, next: StudioTables): TableDiff[] {
   const out: TableDiff[] = [];
-  for (const tableId of ["dues", "ledger", "games"] as const) {
+  for (const tableId of ["dues", "ledger", "spending", "games"] as const) {
     const before = new Map(hydrate(prev[tableId]).map((r) => [String(r.id), r]));
     const after = hydrate(next[tableId]);
     const seen = new Set<string>();

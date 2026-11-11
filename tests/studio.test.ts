@@ -17,6 +17,9 @@ test("studio tables reconcile with the ledger to the cent", () => {
   // Every dollar in the ledger table is a dollar in the team account.
   assert.equal(cents(sum(t.ledger.map((r) => r.amount))), s.balanceCents);
   assert.equal(cents(sum(t.ledger.map((r) => r.money_out))), s.moneyOutCents);
+  // The Spending table is the ledger's money-out entries, nothing more and nothing less.
+  assert.equal(cents(sum(t.spending.map((r) => r.amount))), s.moneyOutCents);
+  assert.ok(t.spending.every((r) => r.amount > 0));
   // What families still owe on the dashboard is what the board says is outstanding.
   assert.equal(cents(sum(t.dues.map((r) => r.outstanding))), s.outstandingCents);
   assert.equal(cents(sum(t.dues.map((r) => r.team_covered))), s.absorbedCents);

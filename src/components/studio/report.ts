@@ -103,14 +103,8 @@ export function defaultReport(aiOpen = true): AgReportState {
           },
           spend: {
             type: "bar-chart-grouped",
-            format: { title: title("Money in and out, by category") },
-            dataMapping: {
-              categoryKey: [{ id: "ledger.category" }],
-              valueKey: [
-                { id: "ledger.money_in", aggregation: "sum" },
-                { id: "ledger.money_out", aggregation: "sum" },
-              ],
-            },
+            format: { title: title("Where the money went") },
+            dataMapping: { categoryKey: [{ id: "spending.category" }], valueKey: [{ id: "spending.amount", aggregation: "sum" }] },
           },
           days: {
             type: "column-chart-stacked",

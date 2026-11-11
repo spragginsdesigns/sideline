@@ -48,6 +48,15 @@ export interface LedgerRow {
   recorded_by: string;
 }
 
+/** One row per dollar the team spent: the ledger's money-out entries on their own, so spending needs no filter. */
+export interface SpendingRow {
+  id: string;
+  date: string;
+  category: string;
+  amount: number;
+  what: string;
+}
+
 /** One row per game: the referee and whether PayPal Payouts has paid them. */
 export interface GameRow {
   id: string;
@@ -65,6 +74,7 @@ export interface StudioTables {
   mode: "live" | "simulator";
   dues: DuesRow[];
   ledger: LedgerRow[];
+  spending: SpendingRow[];
   games: GameRow[];
 }
 
@@ -174,6 +184,7 @@ export function studioTables(state: AppState, mode: "live" | "simulator", now = 
     mode,
     dues,
     ledger,
+    spending: ledger.filter((r) => r.money_out > 0).map((r) => ({ id: r.id, date: r.date, category: r.category, amount: r.money_out, what: r.what })),
     games,
   };
 }
