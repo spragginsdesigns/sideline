@@ -72,7 +72,10 @@ const TOOLS: FnTool[] = [
   },
 ];
 
-async function runTool(name: string, args: Record<string, unknown>): Promise<{ result: unknown; summary: string }> {
+/** Read-only lookups over the ledger and PayPal. Shared by Ask the treasurer and the AG Studio treasurer agent. */
+export const TREASURER_TOOL_NAMES = ["get_team_summary", "list_invoices", "list_transactions", "list_games"] as const;
+
+export async function runTool(name: string, args: Record<string, unknown>): Promise<{ result: unknown; summary: string }> {
   const state = readState();
   const fam = (id: string) => state.team.families.find((f) => f.id === id);
   switch (name) {

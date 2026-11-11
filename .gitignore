@@ -8,3 +8,4 @@ node_modules
 /video/tmp
 next-env.d.ts
 tsconfig.tsbuildinfo
+AGENTS.md

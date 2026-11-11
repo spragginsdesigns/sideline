@@ -17,6 +17,7 @@ Sideline turns that into a scoreboard:
 7. **Ask the treasurer anything.** "How much is left for Fresno, and who's behind?" A tool-calling agent answers from the ledger and PayPal, never guessing a number.
 8. **The parent's pay page speaks their language**: Spanish, Vietnamese, Hmong, Punjabi, Tagalog or Chinese, with English one tap away.
 9. **A season report for every parent**: every dollar in and out, charted. Individual families' payments are rolled up so nobody's finances are on display.
+10. **A dashboard that builds itself.** The **Studio** tab is an AG Studio dashboard over the same ledger: a stadium scoreboard, a bench of jerseys that turn green as families pay, and charts and tables anyone can rearrange. Ask the treasurer agent "who still owes, and chart it" and it reads the PayPal invoices, answers, then hands the chart to AG Studio's built-in agents, which build it on the page.
 
 ## How it uses PayPal
 
@@ -34,19 +35,37 @@ If webhooks can't reach the app (for example on localhost), the board also polls
 
 **No keys? It still runs.** Without `PAYPAL_CLIENT_ID`/`PAYPAL_CLIENT_SECRET`, Sideline swaps in a local simulator (`src/lib/paypal/simulator.ts`). The simulator returns PayPal-shaped responses and emits PayPal-shaped webhook events into the same handler, so the whole product can be tried in one command. A banner and badge always say which mode you are in.
 
+## How it uses AG Studio
+
+`/studio` is one AG Studio component (`ag-studio-react`) fed by three tables built from the ledger (`src/lib/studio/tables.ts`): family dues, the team ledger, and games with referee payouts.
+
+| AG Studio feature | Where |
+|---|---|
+| **Custom widgets** | `src/components/studio/widgets.tsx`: a **Scoreboard** (collected vs still owed as home and away scores, percent collected as the clock) and **The bench** (one jersey per family, coloured by payment status). Both read through the widget API (`widgetApi.getData` with `onDataUpdated`), so page filters and filter widgets apply to them, and both appear in the widget menu with their own data-mapping forms and AI metadata. |
+| **Theming** | `src/components/studio/theme.ts`: one `studioTheme.withParams(...)` theme restyles Studio's panels, the grid widgets and the chart palette to Sideline's night-game colours. |
+| **Layout tools** | Edit and view modes, three pages, a button-filter widget, `responsiveLayoutBreakpoints` with `singleColumnLayout` for phones, and the layout saved per browser with a reset. |
+| **Live data** | `src/components/studio/data.ts`: each poll is diffed and applied with `getDataEngine().applyTransaction(...)`, so a PayPal webhook updates every widget in place and the table flashes the cells that changed. |
+| **Studio Agent Framework** | `src/components/studio/agents.ts`: `createAiHarness` with a **custom treasurer agent** as the primary agent (`directLlmRunner`) next to Studio's five built-in agents. The treasurer has its own tools, defined with `api.defineAiTool`: `get_team_summary`, `list_invoices`, `list_transactions`, `list_games` and `draft_nudges`. When an answer belongs on the page it calls `delegate_to` and Studio's built-in lead, planning, data, page and widget agents build the widget. |
+| **Tool components** | `src/components/studio/toolDisplay.tsx` (`aiToolDisplay`): the chat panel shows the PayPal invoices a call read, and nudges as cards in each family's language with one **Send as PayPal reminders** button. The agent only drafts; a person sends. |
+| **Your own model** | `src/components/studio/adapter.ts` implements `AgLlmAdapter`. Each turn goes to `POST /api/studio/llm`, which calls the OpenAI Responses API with the server's key, so no key reaches the browser. |
+
+AG Studio is a commercial product. Without a licence key it runs in trial mode (a watermark outside localhost); set `NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY` to a key from AG Grid's free 45-day trial to remove it.
+
 ## How it uses AI
 
-All three AI features run on the OpenAI Responses API (`SIDELINE_MODEL`, default `gpt-5.6-luna`):
+Every AI feature runs on the OpenAI Responses API (`SIDELINE_MODEL`, default `gpt-5.6-luna`):
 
 - **Reading the message** (`src/lib/ai/rules.ts`): structured output with a strict JSON schema. Family names can only be roster ids (an enum), so the model cannot invent a family. It lists what it applied and anything ambiguous, and treats the pasted text strictly as data. It never does arithmetic.
 - **The money engine** (`src/lib/ledger/allocate.ts`) is plain TypeScript in integer cents. It handles team totals, per-player and per-family splits, scholarships (team-absorbed or split), full and partial covers (including chains), "half price" and fixed-amount adjustments, money already paid outside PayPal, and exclusions. The AI only reports fractions ("half" = 0.5); it never computes a dollar figure. Tests are in `tests/allocate.test.ts`.
 - **Nudges** (`src/lib/ai/nudges.ts`): one model call per family (so languages never bleed between families), in the family's language with a native-sounding register, plus an English translation for the treasurer. The prompt rules out guilt, fees and threats; nudges unlock only after the due date and never twice in a day.
+- **The Studio treasurer agent** (`src/components/studio/agents.ts`): the same read-only tools inside AG Studio's Agent Framework, plus delegation to Studio's built-in agents to build widgets. Six agents share one model through a server-side adapter. Each built-in agent keeps its own instructions, with Sideline's house rules appended.
 - **Ask the treasurer** (`src/lib/ai/treasurer.ts`): a function-calling loop over `get_team_summary`, `list_invoices`, `list_transactions` (PayPal Transaction Search in live mode) and `list_games`. Tool names follow PayPal's Agent Toolkit; the tools are implemented directly against the REST API here. The agent is read-only, answers in the language you ask in, and the UI shows which tools ran.
 
 ## Built with
 
 - Next.js 16, React 19, TypeScript, Tailwind CSS 4
-- **AG Grid** (the live family board, the transaction ledger) and **AG Charts** (collection donut, bank balance, spending breakdown), both Community editions
+- **AG Studio** 3.1 (the Studio dashboard: custom widgets, theming, responsive layout, live transactions, the Studio Agent Framework), which brings AG Grid Enterprise and AG Charts Enterprise for its built-in widgets
+- **AG Grid** (the live family board, the transaction ledger) and **AG Charts** (collection donut, bank balance, spending breakdown), Community editions, on the Board and the Season report
 - PayPal REST APIs, OpenAI Responses API
 - Code written with help from AI coding agents (Claude Code)
 
@@ -56,7 +75,7 @@ All three AI features run on the OpenAI Responses API (`SIDELINE_MODEL`, default
 npm install
 cp .env.example .env.local   # add OPENAI_API_KEY; PayPal keys are optional
 npm run dev                  # http://localhost:3000
-npm test                     # money engine + PayPal client tests
+npm test                     # money engine, PayPal client and Studio data tests
 ```
 
 ### With the PayPal sandbox
@@ -86,6 +105,9 @@ src/lib/ai/                  message reader, nudges, treasurer agent
 src/lib/paypal/              gateway interface, live REST client, simulator
 src/lib/webhooks.ts          one idempotent handler for every PayPal event
 src/lib/sideline.ts          app services (charges, reminders, payouts, sync)
+src/lib/studio/              the tables AG Studio reads, and the server half of its LLM adapter
+src/components/studio/       the AG Studio dashboard: widgets, theme, agents, tool components
+src/app/studio               the Studio page
 src/app/board                treasurer dashboard
 src/app/pay/[invoiceId]      the parent's mobile pay page
 src/app/report               public season report
@@ -93,4 +115,4 @@ src/app/report               public season report
 
 ## License
 
-MIT
+MIT for everything in this repository. AG Studio, AG Grid Enterprise and AG Charts Enterprise are commercial libraries from AG Grid Ltd, installed from npm under their own licence and not part of this repository.

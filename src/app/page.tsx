@@ -44,6 +44,9 @@ export default function Home() {
                 See what a parent gets
               </Link>
             )}
+            <Link href="/studio" className="btn btn-ghost !min-h-13 !px-6 !text-base">
+              Build a dashboard with AI
+            </Link>
             <Link href="/report" className="btn btn-ghost !min-h-13 !px-6 !text-base">
               Season report
             </Link>
@@ -76,7 +79,7 @@ export default function Home() {
           </div>
           <div>
             <div className="label">A scoreboard, not a spreadsheet</div>
-            <p className="mt-2 text-sm leading-relaxed text-chalk-dim">AG Grid and AG Charts power the live board and the season report: rows turn green the moment PayPal says a family paid.</p>
+            <p className="mt-2 text-sm leading-relaxed text-chalk-dim">AG Grid and AG Charts power the live board. The Studio tab is an AG Studio dashboard with custom scoreboard widgets, where the treasurer agent hands chart-building to Studio&apos;s built-in agents.</p>
           </div>
         </section>
       </main>

@@ -32,7 +32,7 @@ export function ModeBadge({ mode, environment }: { mode: DashboardView["mode"]; 
   );
 }
 
-export function TopBar({ data, active }: { data: DashboardView | null; active: "board" | "report" }) {
+export function TopBar({ data, active }: { data: DashboardView | null; active: "board" | "studio" | "report" }) {
   return (
     <header className="sticky top-0 z-20 border-b border-chalk/[0.08] bg-night-900/90 backdrop-blur-md">
       <div className="mx-auto flex max-w-[1500px] items-center gap-3 px-4 py-3 sm:px-6">
@@ -50,6 +50,9 @@ export function TopBar({ data, active }: { data: DashboardView | null; active: "
         <nav className="ml-auto flex items-center gap-1 text-sm">
           <Link href="/board" className={clsx("rounded-md px-3 py-2 font-display uppercase tracking-wider", active === "board" ? "bg-chalk/10 text-chalk" : "text-chalk-dim hover:text-chalk")}>
             Board
+          </Link>
+          <Link href="/studio" className={clsx("rounded-md px-3 py-2 font-display uppercase tracking-wider", active === "studio" ? "bg-chalk/10 text-chalk" : "text-chalk-dim hover:text-chalk")}>
+            Studio
           </Link>
           <Link href="/report" className={clsx("rounded-md px-3 py-2 font-display uppercase tracking-wider", active === "report" ? "bg-chalk/10 text-chalk" : "text-chalk-dim hover:text-chalk")}>
             Season report
