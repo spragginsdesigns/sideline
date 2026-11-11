@@ -100,6 +100,8 @@ export function FamilyBoard({
   onFilter: (f: BoardFilter) => void;
 }) {
   const narrow = useMediaQuery("(max-width: 720px)");
+  // Laptop widths: the board column is ~770px, so fold the language into the family cell.
+  const compact = useMediaQuery("(max-width: 1499px)");
   const grid = useRef<AgGridReact<BoardRow>>(null);
   const [search, setSearch] = useState("");
 
@@ -205,7 +207,7 @@ export function FamilyBoard({
       headerName: "Family",
       colId: "family",
       flex: 2.2,
-      minWidth: narrow ? 128 : 210,
+      minWidth: narrow ? 128 : compact ? 168 : 210,
       getQuickFilterText: (p) => (p.data?.family ? `${p.data.family.surname} ${p.data.family.guardian} ${p.data.family.players.map((x) => x.name).join(" ")}` : ""),
       valueGetter: (p) => p.data?.family?.surname,
       cellRenderer: (p: ICellRendererParams<BoardRow>) => {
@@ -216,7 +218,10 @@ export function FamilyBoard({
             {!narrow && <Avatar name={f.guardian} />}
             <div className="min-w-0">
               <div className="truncate font-semibold text-chalk">{f.surname}</div>
-              <div className="truncate text-xs text-chalk-faint">{f.players.map((pl) => (narrow ? pl.name.split(" ")[0] : `${pl.name.split(" ")[0]} #${pl.jersey}`)).join(" · ")}</div>
+              <div className="truncate text-xs text-chalk-faint">
+                {f.players.map((pl) => (narrow ? pl.name.split(" ")[0] : `${pl.name.split(" ")[0]} #${pl.jersey}`)).join(" · ")}
+                {compact && !narrow && <span className="ml-1.5 font-mono text-[0.65rem] uppercase text-chalk-dim" title={LANGUAGE_NAMES[f.language]}>· {f.language}</span>}
+              </div>
             </div>
           </div>
         );
@@ -235,7 +240,7 @@ export function FamilyBoard({
       headerName: "Owes",
       headerTooltip: "This family's invoice, including anyone they cover",
       colId: "amount",
-      width: narrow ? 88 : 112,
+      width: narrow ? 88 : compact ? 98 : 112,
       type: "rightAligned",
       cellStyle: { display: "flex", alignItems: "center", justifyContent: "flex-end" },
       valueGetter: (p) => (pinned(p) ? (p.data as unknown as BoardTotals & { billed: number })?.billed : (p.data?.invoice?.amountCents ?? 0) + (p.data?.prepaid?.amountCents ?? 0)),
@@ -250,7 +255,7 @@ export function FamilyBoard({
       headerName: "Notes",
       colId: "note",
       flex: 1.4,
-      minWidth: 170,
+      minWidth: compact ? 118 : 170,
       sortable: false,
       getQuickFilterText: (p) => (p.data?.covers ? [p.data.coveredBy, ...p.data.covers, p.data.scholarship ? "scholarship" : ""].join(" ") : ""),
       valueGetter: (p) => p.data?.coveredBy ?? p.data?.covers?.join(","),
@@ -307,7 +312,7 @@ export function FamilyBoard({
       headerName: "Last activity",
       colId: "when",
       flex: 1.2,
-      minWidth: 140,
+      minWidth: compact ? 118 : 140,
       valueGetter: (p) => p.data?.invoice?.paidAt ?? p.data?.invoice?.reminders?.at(-1)?.at ?? p.data?.invoice?.sentAt ?? "",
       cellRenderer: (p: ICellRendererParams<BoardRow>) => {
         if (pinned(p)) return null;
@@ -332,7 +337,7 @@ export function FamilyBoard({
     const actions: ColDef<BoardRow> = {
       headerName: "",
       colId: "actions",
-      width: 124,
+      width: compact ? 112 : 124,
       sortable: false,
       cellRenderer: (p: ICellRendererParams<BoardRow>) => {
         if (pinned(p)) return null;
@@ -365,8 +370,9 @@ export function FamilyBoard({
         );
       },
     };
-    return narrow ? [family, amount, status] : [family, language, amount, note, status, when, actions];
-  }, [narrow, onNudge, recordCash]);
+    if (narrow) return [family, amount, status];
+    return compact ? [family, amount, note, status, when, actions] : [family, language, amount, note, status, when, actions];
+  }, [narrow, compact, onNudge, recordCash]);
 
   const pinnedBottom = useMemo(() => (rows.length ? [totals as unknown as BoardRow] : []), [rows.length, totals]);
 
