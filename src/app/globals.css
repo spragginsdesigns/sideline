@@ -1,0 +1,210 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: var(--font-oswald), "Oswald", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-hanken), "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), "JetBrains Mono", ui-monospace, monospace;
+
+  --color-night-950: #050811;
+  --color-night-900: #070b14;
+  --color-night-850: #0a1020;
+  --color-night-800: #0f172a;
+  --color-night-700: #172036;
+  --color-night-600: #222c45;
+  --color-night-500: #33405e;
+  --color-chalk: #e2e8f0;
+  --color-chalk-dim: #94a3b8;
+  --color-chalk-faint: #64748b;
+  --color-led: #f59e0b;
+  --color-led-bright: #fbbf24;
+  --color-turf: #10b981;
+  --color-turf-bright: #34d399;
+  --color-coral: #ef4444;
+  --color-coral-soft: #f87171;
+  --color-sky: #38bdf8;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    background-color: var(--color-night-900);
+    color: var(--color-chalk);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection {
+    background: rgb(245 158 11 / 0.35);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-led);
+    outline-offset: 2px;
+  }
+}
+
+/* The pitch: a faint chalk grid with floodlight glow at the top. */
+.pitch {
+  background-color: var(--color-night-900);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgb(56 189 248 / 0.10), transparent 70%),
+    radial-gradient(ellipse 50% 35% at 100% 0%, rgb(245 158 11 / 0.06), transparent 70%),
+    linear-gradient(rgb(226 232 240 / 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(226 232 240 / 0.035) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+}
+
+.card {
+  background: linear-gradient(180deg, rgb(23 32 54 / 0.92), rgb(15 23 42 / 0.92));
+  border: 1px solid rgb(148 163 184 / 0.14);
+  box-shadow: inset 0 1px 0 rgb(226 232 240 / 0.07), 0 18px 40px -24px rgb(0 0 0 / 0.8);
+  border-radius: 0.75rem;
+}
+
+.led {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.led-amber {
+  color: var(--color-led-bright);
+  text-shadow: 0 0 18px rgb(245 158 11 / 0.45);
+}
+.led-green {
+  color: var(--color-turf-bright);
+  text-shadow: 0 0 18px rgb(16 185 129 / 0.45);
+}
+.led-coral {
+  color: var(--color-coral-soft);
+  text-shadow: 0 0 18px rgb(239 68 68 / 0.4);
+}
+
+.label {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-chalk-dim);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.5rem;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  font-size: 0.85rem;
+  min-height: 2.75rem;
+  padding: 0 1.1rem;
+  transition: transform 120ms ease, background-color 160ms ease, box-shadow 160ms ease, opacity 160ms;
+  touch-action: manipulation;
+  white-space: nowrap;
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px) scale(0.99);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--color-led);
+  color: var(--color-night-900);
+  box-shadow: 0 0 0 1px rgb(251 191 36 / 0.6) inset, 0 8px 24px -10px rgb(245 158 11 / 0.7);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-led-bright);
+}
+.btn-turf {
+  background: var(--color-turf);
+  color: #022c22;
+  box-shadow: 0 8px 24px -10px rgb(16 185 129 / 0.7);
+}
+.btn-turf:hover:not(:disabled) {
+  background: var(--color-turf-bright);
+}
+.btn-ghost {
+  background: rgb(15 23 42 / 0.6);
+  border: 1px solid rgb(226 232 240 / 0.16);
+  color: var(--color-chalk);
+}
+.btn-ghost:hover:not(:disabled) {
+  border-color: rgb(245 158 11 / 0.55);
+  background: rgb(23 32 54 / 0.9);
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+  line-height: 1.25rem;
+}
+.pill-paid { background: rgb(16 185 129 / 0.14); color: var(--color-turf-bright); border-color: rgb(16 185 129 / 0.35); }
+.pill-sent { background: rgb(245 158 11 / 0.12); color: var(--color-led-bright); border-color: rgb(245 158 11 / 0.32); }
+.pill-late { background: rgb(239 68 68 / 0.14); color: var(--color-coral-soft); border-color: rgb(239 68 68 / 0.38); }
+.pill-muted { background: rgb(148 163 184 / 0.1); color: var(--color-chalk-dim); border-color: rgb(148 163 184 / 0.22); }
+.pill-sky { background: rgb(56 189 248 / 0.12); color: #7dd3fc; border-color: rgb(56 189 248 / 0.3); }
+
+.dot-live {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--color-turf-bright);
+  box-shadow: 0 0 10px rgb(52 211 153 / 0.9);
+  animation: breathe 2.2s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.rise { animation: rise 320ms ease-out both; }
+
+@keyframes flash-green {
+  0% { background-color: rgb(16 185 129 / 0.35); }
+  100% { background-color: transparent; }
+}
+.flash-green { animation: flash-green 1.6s ease-out; }
+
+textarea.field, input.field, select.field {
+  width: 100%;
+  background: rgb(5 8 17 / 0.85);
+  border: 1px solid rgb(226 232 240 / 0.14);
+  border-radius: 0.6rem;
+  color: var(--color-chalk);
+  padding: 0.75rem 0.9rem;
+  font-size: 1rem;
+  box-shadow: inset 0 2px 6px rgb(0 0 0 / 0.45);
+  transition: border-color 140ms;
+}
+textarea.field:focus, input.field:focus, select.field:focus {
+  outline: none;
+  border-color: rgb(245 158 11 / 0.7);
+}
+
+/* AG Grid sits inside our cards; make its row flash match the turf colour. */
+.ag-theme-sideline .ag-row.row-paid-flash {
+  animation: flash-green 1.8s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}

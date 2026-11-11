@@ -1,0 +1,10 @@
+node_modules
+.next
+.data
+.env*
+!.env.example
+*.log
+/video/out
+/video/tmp
+next-env.d.ts
+tsconfig.tsbuildinfo
