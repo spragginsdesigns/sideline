@@ -333,6 +333,7 @@ export class LivePayPalGateway implements PayPalGateway {
       paidCents: valueToCents(inv?.payments?.paid_amount?.value),
       recipientEmail: inv?.primary_recipients?.[0]?.billing_info?.email_address ?? null,
       payerViewUrl: inv?.detail?.metadata?.recipient_view_url ?? null,
+      lastPaymentMethod: Array.isArray(inv?.payments?.transactions) && inv.payments.transactions.length ? inv.payments.transactions[inv.payments.transactions.length - 1]?.method ?? null : null,
     };
   }
 

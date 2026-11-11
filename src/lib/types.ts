@@ -106,6 +106,7 @@ export interface Payout {
   amountCents: number;
   createdAt: string;
   paidAt: string | null;
+  attempt?: number; // payout attempts for this game (a FAILED/UNCLAIMED payout can be retried)
 }
 
 export interface Game {

@@ -116,6 +116,48 @@ ${roster}`;
   const raw = await structured<RawRules>({ name: "charge_rules", system, user: `Message:\n"""${message.slice(0, 4000)}"""`, schema, effort: "low" });
 
   const cents = (d: number) => Math.round(d * 100);
+  const ambiguities = [...raw.ambiguities];
+  const famName = (id: string) => team.families.find((f) => f.id === id)?.surname ?? id;
+  // Models sometimes write 50 for half. Accept percentages; anything else unreadable is dropped and flagged.
+  const asFraction = (v: number | null, max: number): number | null | "bad" => {
+    if (v === null) return null;
+    if (v > 0 && v <= max) return v;
+    if (v > max && v <= 100) return v / 100;
+    return "bad";
+  };
+  const coverings: ChargeRules["coverings"] = [];
+  for (const c of raw.coverings) {
+    const f = asFraction(c.fraction, 1);
+    if (f === "bad" || f === null) {
+      ambiguities.push(`Couldn't tell how much of the ${famName(c.covered_family_id)} family's share the ${famName(c.payer_family_id)} family covers, so that cover was left out. Edit the message to say "all" or "half".`);
+      continue;
+    }
+    coverings.push({ payerFamilyId: c.payer_family_id, coveredFamilyId: c.covered_family_id, fraction: f });
+  }
+  const adjustments: ChargeRules["adjustments"] = [];
+  for (const a of raw.adjustments) {
+    const f = asFraction(a.fraction, 5);
+    if (f === "bad") {
+      ambiguities.push(`Couldn't read the discount for the ${famName(a.family_id)} family, so they are billed a normal share.`);
+      continue;
+    }
+    const amountCents = f === null && a.fixed_amount_dollars !== null && a.fixed_amount_dollars >= 0 ? cents(a.fixed_amount_dollars) : null;
+    if (f === null && amountCents === null) continue;
+    adjustments.push({ familyId: a.family_id, fraction: f, amountCents, reason: a.reason.slice(0, 80) });
+  }
+  const prepaid: ChargeRules["prepaid"] = [];
+  for (const p of raw.already_paid) {
+    if (p.amount_dollars !== null) {
+      if (p.amount_dollars > 0) prepaid.push({ familyId: p.family_id, amountCents: cents(p.amount_dollars), fraction: null, method: p.method });
+      continue;
+    }
+    const f = asFraction(p.fraction_of_share, 1);
+    if (f === "bad") {
+      ambiguities.push(`Couldn't tell how much the ${famName(p.family_id)} family already paid, so nothing was credited. Check with them.`);
+      continue;
+    }
+    prepaid.push({ familyId: p.family_id, amountCents: null, fraction: f === 1 ? null : f, method: p.method });
+  }
   return {
     isMoneyRequest: raw.is_money_request,
     title: raw.title.slice(0, 60) || "Team charge",
@@ -125,21 +167,11 @@ ${roster}`;
     dueDate: raw.due_date && /^\d{4}-\d{2}-\d{2}$/.test(raw.due_date) ? raw.due_date : null,
     scholarshipFamilyIds: raw.scholarship_family_ids,
     scholarshipPolicy: raw.scholarship_policy,
-    coverings: raw.coverings.map((c) => ({ payerFamilyId: c.payer_family_id, coveredFamilyId: c.covered_family_id, fraction: c.fraction > 0 && c.fraction <= 1 ? c.fraction : 1 })),
-    adjustments: raw.adjustments.map((a) => ({
-      familyId: a.family_id,
-      fraction: a.fraction !== null && a.fraction >= 0 && a.fraction <= 5 ? a.fraction : null,
-      amountCents: a.fraction === null && a.fixed_amount_dollars !== null ? Math.max(0, cents(a.fixed_amount_dollars)) : null,
-      reason: a.reason.slice(0, 80),
-    })),
-    prepaid: raw.already_paid.map((p) => ({
-      familyId: p.family_id,
-      amountCents: p.amount_dollars === null ? null : Math.max(0, cents(p.amount_dollars)),
-      fraction: p.amount_dollars === null && p.fraction_of_share !== null && p.fraction_of_share > 0 && p.fraction_of_share < 1 ? p.fraction_of_share : null,
-      method: p.method,
-    })),
+    coverings,
+    adjustments,
+    prepaid,
     excludedFamilyIds: raw.excluded_family_ids,
     notes: raw.applied_rules,
-    ambiguities: raw.ambiguities,
+    ambiguities,
   };
 }

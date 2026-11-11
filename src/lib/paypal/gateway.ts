@@ -33,6 +33,7 @@ export interface RemoteInvoice {
   paidCents: number;
   recipientEmail: string | null;
   payerViewUrl: string | null;
+  lastPaymentMethod?: string | null; // e.g. PAYPAL, CASH, CHECK
 }
 
 export interface PayoutInput {

@@ -72,7 +72,7 @@ export function ChargeComposer({
   const stated = rules ? (rules.amountKind === "team_total" ? rules.amountCents : null) : null;
   // Every cent accounted for: invoiced + already paid + team-covered = total (+ rounding to the team fund).
   const accounted = invoicedTotal + (alloc?.prepaidCents ?? 0) + (alloc?.absorbedCents ?? 0);
-  const addsUp = alloc ? accounted === alloc.totalCents && (stated === null || alloc.totalCents === stated + alloc.roundingCents) : true;
+  const addsUp = alloc ? invoicedTotal === alloc.invoicedCents && accounted === alloc.totalCents + alloc.surplusCents && (stated === null || alloc.totalCents === stated + alloc.roundingCents) : true;
   // Fairness check: flag any invoice far above a normal share, and any participating family billed nothing.
   const fairness: string[] = [];
   if (preview && alloc) {
@@ -158,6 +158,7 @@ export function ChargeComposer({
                 {money(invoicedTotal)} invoiced
                 {alloc!.prepaidCents > 0 && ` + ${money(alloc!.prepaidCents)} already paid`}
                 {alloc!.absorbedCents > 0 && ` + ${money(alloc!.absorbedCents)} team-covered`}
+                {alloc!.surplusCents > 0 && ` − ${money(alloc!.surplusCents)} extra chipped in`}
                 {` = ${money(alloc!.totalCents - alloc!.roundingCents)}`}
                 {alloc!.roundingCents > 0 && ` + ${alloc!.roundingCents}¢`} {addsUp ? "✓" : "✗"}
                 {alloc!.roundingCents > 0 && <span className="block text-chalk-faint">{alloc!.roundingCents}¢ of rounding goes to the team fund so everyone pays the same {money(alloc!.perUnitCents ?? 0)}</span>}
@@ -187,7 +188,7 @@ export function ChargeComposer({
             <button className="btn btn-ghost" disabled={phase !== "idle"} onClick={() => setPreview(null)}>
               <Undo2 size={16} /> Edit message
             </button>
-            <button className="btn btn-turf" disabled={phase !== "idle" || billable === 0} onClick={send}>
+            <button className="btn btn-turf" disabled={phase !== "idle" || billable === 0 || !addsUp} onClick={send} title={addsUp ? undefined : "The amounts don't add up; edit the message first"}>
               {phase === "sending" ? <Spinner /> : <Send size={16} />}
               {phase === "sending" ? `Creating ${billable} PayPal invoices…` : `Send ${billable} PayPal invoices`}
             </button>

@@ -3,7 +3,7 @@
 // simulator's webhook events (which also mutate) never deadlock.
 import { gateway, simulator } from "./paypal/index.ts";
 import { mutate, newId, readState } from "./store.ts";
-import { allocate, invoicesFor, methodLabel, type Allocation, type ChargeRules } from "./ledger/allocate.ts";
+import { allocate, balances, invoicesFor, methodLabel, type Allocation, type ChargeRules } from "./ledger/allocate.ts";
 import { readChargeMessage } from "./ai/rules.ts";
 import { draftNudges, type Nudge } from "./ai/nudges.ts";
 import { formatCents } from "./money.ts";
@@ -140,15 +140,26 @@ async function publishInvoice(invoiceId: string): Promise<void> {
     inv = readState().invoices.find((i) => i.id === invoiceId)!;
   }
   if (inv.status === "DRAFT") {
-    const sent = await gw.sendInvoice(inv.paypalInvoiceId!, {
-      subject: `${team.name}: ${charge.title} (${formatCents(inv.amountCents)})`,
-      note: `Pay with PayPal, Venmo or card. Questions? Reply to ${team.treasurer}.`,
-    });
+    let payerViewUrl: string | null;
+    try {
+      payerViewUrl = (
+        await gw.sendInvoice(inv.paypalInvoiceId!, {
+          subject: `${team.name}: ${charge.title} (${formatCents(inv.amountCents)})`,
+          note: `Pay with PayPal, Venmo or card. Questions? Reply to ${team.treasurer}.`,
+        })
+      ).payerViewUrl;
+    } catch (e) {
+      // The send may have reached PayPal even though the response was lost: ask PayPal before failing.
+      const remote = await gw.getInvoice(inv.paypalInvoiceId!).catch(() => null);
+      if (!remote || remote.status === "DRAFT") throw e;
+      payerViewUrl = remote.payerViewUrl;
+    }
     await mutate((state) => {
       const row = state.invoices.find((x) => x.id === invoiceId)!;
+      if (row.status !== "DRAFT") return; // a webhook got here first; don't overwrite it
       row.status = "SENT";
       row.sentAt = new Date().toISOString();
-      row.payerViewUrl = sent.payerViewUrl;
+      row.payerViewUrl = payerViewUrl;
     });
   }
   if (!readState().invoices.find((i) => i.id === invoiceId)!.qrCodeDataUrl) {
@@ -186,6 +197,8 @@ async function publishAll(invoiceIds: string[]) {
 export async function createCharge(rules: ChargeRules, sourceMessage: string, clientKey?: string): Promise<{ chargeId: string; sent: number; failed: { family: string; error: string }[]; duplicate?: boolean }> {
   const preview = buildPreview(rules);
   if (preview.invoices.length === 0) throw new Error("Nobody owes anything on this charge, so there is nothing to send.");
+  // Never send a charge whose numbers don't reconcile to the cent.
+  if (!balances(preview.allocation, preview.invoices.reduce((a, i) => a + i.amountCents, 0))) throw new Error("These amounts don't add up, so nothing was sent. Edit the message and read it again.");
   const key = clientKey?.slice(0, 80) || undefined;
   const chargeId = newId("c");
   const outcome = await mutate((state) => {
@@ -239,8 +252,10 @@ export async function createCharge(rules: ChargeRules, sourceMessage: string, cl
     return { existing: null };
   });
   if (outcome.existing) {
+    // Same click again (or a retry after a partial failure): finish what's left instead of creating anything new.
+    const retry = await retryDrafts(outcome.existing);
     const n = readState().invoices.filter((i) => i.chargeId === outcome.existing && i.status !== "DRAFT").length;
-    return { chargeId: outcome.existing, sent: n, failed: [], duplicate: true };
+    return { chargeId: outcome.existing, sent: n, failed: retry.failed, duplicate: true };
   }
 
   const ids = readState().invoices.filter((i) => i.chargeId === chargeId).map((i) => i.id);
@@ -358,16 +373,17 @@ export async function finalizeGame(gameId: string, score: { us: number; them: nu
   const claim = await mutate((s) => {
     const g = s.games.find((x) => x.id === gameId);
     if (!g) throw new Error("Unknown game");
-    if (g.payout) throw new Error("This game is already final and the referee was paid.");
+    if (g.payout && !["FAILED", "UNCLAIMED"].includes(g.payout.status)) throw new Error(g.payout.status === "SUCCESS" ? "This game is already final and the referee was paid." : "The referee payout for this game is already on its way.");
+    const attempt = (g.payout?.attempt ?? 0) + 1;
     if (new Date(g.date).getTime() > Date.now() + 3 * 3600_000) throw new Error("That game hasn't been played yet.");
     const ref = s.team.referees.find((r) => r.id === g.refereeId)!;
-    g.payout = { batchId: "", itemId: null, status: "PROCESSING", amountCents: ref.feeCents, createdAt: new Date().toISOString(), paidAt: null };
-    return { ref, opponent: g.opponent };
+    g.payout = { batchId: "", itemId: null, status: "PROCESSING", amountCents: ref.feeCents, createdAt: new Date().toISOString(), paidAt: null, attempt };
+    return { ref, opponent: g.opponent, attempt };
   });
   try {
     const payout = await gateway().createPayout({
       // One payout per game, ever: PayPal rejects a reused sender_batch_id.
-      senderBatchId: `${team.shortName}-${team.id}-${gameId}`.slice(0, 127),
+      senderBatchId: `${team.shortName}-${team.id}-${gameId}${claim.attempt > 1 ? `-r${claim.attempt}` : ""}`.slice(0, 127),
       emailSubject: `${team.name} referee fee`,
       emailMessage: `Thanks for reffing ${team.name} vs ${claim.opponent}!`,
       items: [{ receiverEmail: claim.ref.email, amountCents: claim.ref.feeCents, note: `Referee fee: vs ${claim.opponent}`, senderItemId: gameId }],
@@ -383,7 +399,7 @@ export async function finalizeGame(gameId: string, score: { us: number; them: nu
   } catch (e) {
     await mutate((s) => {
       const g = s.games.find((x) => x.id === gameId)!;
-      if (g.payout?.status === "PROCESSING") g.payout = null;
+      if (g.payout?.status === "PROCESSING") g.payout = claim.attempt > 1 ? { ...g.payout, status: "FAILED" } : null;
     });
     throw e;
   }
@@ -400,7 +416,11 @@ export async function syncFromPayPal(): Promise<{ checked: number; updated: numb
       const remote = await gw.getInvoice(inv.paypalInvoiceId!);
       if (remote.status === "PAID" || remote.status === "MARKED_AS_PAID") {
         const r = await handlePayPalEvent(
-          { id: `SYNC-${inv.paypalInvoiceId}-PAID`, event_type: "INVOICING.INVOICE.PAID", resource: { id: inv.paypalInvoiceId, payments: { paid_amount: { value: (remote.paidCents / 100).toFixed(2) } } } },
+          {
+            id: `SYNC-${inv.paypalInvoiceId}-PAID`,
+            event_type: "INVOICING.INVOICE.PAID",
+            resource: { id: inv.paypalInvoiceId, payments: { paid_amount: { value: (remote.paidCents / 100).toFixed(2) }, transactions: remote.lastPaymentMethod ? [{ method: remote.lastPaymentMethod }] : [] } },
+          },
           "paypal-sync",
         );
         if (r.handled) updated++;

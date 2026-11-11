@@ -114,6 +114,9 @@ function apply(state: AppState, event: IncomingEvent, source: EventSource): Hand
     }
   }
 
+  // Remember only events we acted on: an event we couldn't match yet (e.g. a payout webhook
+  // that beat our own write) must stay retryable, and PayPal redelivers non-2xx responses.
+  if (!result.handled && !result.duplicate) return result;
   state.processedWebhookIds.push(event.id);
   if (state.processedWebhookIds.length > MAX_REMEMBERED) state.processedWebhookIds.splice(0, state.processedWebhookIds.length - MAX_REMEMBERED);
   return result;

@@ -31,6 +31,7 @@ export interface Allocation {
   prepaidCents: number;
   invoicedCents: number;
   roundingCents: number; // pennies added by rounding the per-player share up to a whole cent
+  surplusCents: number; // extra paid above a normal share (a family chipping in more), goes to the team fund
   perUnitCents: number | null;
   warnings: string[];
 }
@@ -55,7 +56,7 @@ export function splitExact(totalCents: number, weights: number[]): number[] {
   return floors;
 }
 
-const clampFraction = (f: number) => (Number.isFinite(f) ? Math.min(1, Math.max(0, f)) : 1);
+const clampFraction = (f: number, max = 1) => (Number.isFinite(f) ? Math.min(max, Math.max(0, f)) : 1);
 
 export function allocate(rules: ChargeRules, families: Family[]): Allocation {
   const warnings: string[] = [];
@@ -90,13 +91,24 @@ export function allocate(rules: ChargeRules, families: Family[]): Allocation {
     }
   } else {
     perUnit = rules.amountCents;
-    for (const f of participants) share.set(f.id, rules.amountKind === "per_player" ? rules.amountCents * units(f, "player") : rules.amountCents);
+    const basis = rules.amountKind === "per_player" ? "player" : "family";
+    for (const f of participants) share.set(f.id, rules.amountCents * units(f, basis));
+    if (rules.scholarshipPolicy === "split_among_others") {
+      // The other families split the scholarship families' shares between them.
+      const others = participants.filter((f) => !scholarship.has(f.id));
+      const extra = participants.filter((f) => scholarship.has(f.id)).reduce((a, f) => a + (share.get(f.id) ?? 0), 0);
+      const parts = splitExact(extra, others.map((f) => units(f, basis)));
+      others.forEach((f, i) => share.set(f.id, (share.get(f.id) ?? 0) + parts[i]));
+      for (const f of participants) if (scholarship.has(f.id)) share.set(f.id, 0);
+      if (extra > 0 && others.length === 0) warnings.push("No family is left to share the scholarship.");
+    }
   }
 
   // 2. What each family itself owes after scholarships and adjustments; the team fund absorbs the rest.
   const owes = new Map<string, number>();
   const ownNote = new Map<string, string>();
   let absorbed = 0;
+  let surplus = 0;
   const adjusted = new Map<string, ChargeRules["adjustments"][number]>();
   for (const a of rules.adjustments) {
     if (!known(a.familyId) || excluded.has(a.familyId)) continue;
@@ -121,12 +133,13 @@ export function allocate(rules: ChargeRules, families: Family[]): Allocation {
       continue;
     }
     let pay = s;
-    if (a.fraction !== null && a.fraction !== undefined) pay = Math.round(s * clampFraction(a.fraction));
+    if (a.fraction !== null && a.fraction !== undefined) pay = Math.round(s * clampFraction(a.fraction, 5));
     else if (a.amountCents !== null && a.amountCents !== undefined) pay = Math.max(0, Math.round(a.amountCents));
     if (pay > s * 3 && s > 0) warnings.push(`The ${f.surname} family's amount (${(pay / 100).toFixed(2)}) is over three times a normal share. Double-check it.`);
     absorbed += Math.max(0, s - pay);
+    surplus += Math.max(0, pay - s);
     owes.set(f.id, pay);
-    ownNote.set(f.id, `${a.reason || "Adjusted"}${pay < s ? `: the team fund covers the other ${((s - pay) / 100).toFixed(2)}` : ""}`);
+    ownNote.set(f.id, `${a.reason || "Adjusted"}${pay < s ? `: the team fund covers the other ${((s - pay) / 100).toFixed(2)}` : pay > s ? `: ${((pay - s) / 100).toFixed(2)} extra goes to the team fund` : ""}`);
   }
 
   // 3. Who pays for whom. Full covers chain (A covers B, B covers C => A pays C); partial covers split the share.
@@ -187,6 +200,8 @@ export function allocate(rules: ChargeRules, families: Family[]): Allocation {
   // 4. Money already handed over outside PayPal reduces what the payer is invoiced.
   const billOf = (payer: string) => lines.filter((l) => l.payerFamilyId === payer).reduce((a, l) => a + l.amountCents, 0);
   const prepaid: Allocation["prepaid"] = [];
+  // A family can pay in several pieces (cash and Venmo): add them up per family, then cap at the bill.
+  const byFamily = new Map<string, { amount: number; method: PrepaidMethod }>();
   for (const p of rules.prepaid) {
     if (!known(p.familyId) || excluded.has(p.familyId)) continue;
     const bill = billOf(p.familyId);
@@ -194,18 +209,34 @@ export function allocate(rules: ChargeRules, families: Family[]): Allocation {
       if (covers.has(p.familyId)) warnings.push(`The ${name(p.familyId)} family already paid, but someone else is covering them. Check who should get the credit.`);
       continue;
     }
-    let amt = p.amountCents !== null && p.amountCents !== undefined ? Math.round(p.amountCents) : p.fraction ? Math.round(bill * clampFraction(p.fraction)) : bill;
+    const amt =
+      p.amountCents !== null && p.amountCents !== undefined
+        ? Math.round(p.amountCents)
+        : p.fraction !== null && p.fraction !== undefined
+          ? Math.round(bill * clampFraction(p.fraction))
+          : bill;
+    const prev = byFamily.get(p.familyId);
+    byFamily.set(p.familyId, { amount: (prev?.amount ?? 0) + amt, method: prev && prev.method !== p.method ? "other" : p.method });
+  }
+  for (const [familyId, { amount, method }] of byFamily) {
+    const bill = billOf(familyId);
+    let amt = amount;
     if (amt > bill) {
-      warnings.push(`The ${name(p.familyId)} family already paid ${(amt / 100).toFixed(2)}, more than their ${(bill / 100).toFixed(2)} share. The extra ${((amt - bill) / 100).toFixed(2)} is not credited here.`);
+      warnings.push(`The ${name(familyId)} family already paid ${(amt / 100).toFixed(2)}, more than their ${(bill / 100).toFixed(2)} share. The extra ${((amt - bill) / 100).toFixed(2)} is not credited here.`);
       amt = bill;
     }
-    if (amt > 0) prepaid.push({ familyId: p.familyId, amountCents: amt, method: p.method });
+    if (amt > 0) prepaid.push({ familyId, amountCents: amt, method });
   }
 
   const totalCents = [...share.values()].reduce((a, b) => a + b, 0);
   const prepaidCents = prepaid.reduce((a, p) => a + p.amountCents, 0);
   const invoicedCents = lines.reduce((a, l) => a + (l.payerFamilyId ? l.amountCents : 0), 0) - prepaidCents;
-  return { lines, shareCents: Object.fromEntries(share), totalCents, absorbedCents: absorbed, prepaid, prepaidCents, invoicedCents, roundingCents: rounding, perUnitCents: perUnit, warnings };
+  return { lines, shareCents: Object.fromEntries(share), totalCents, absorbedCents: absorbed, prepaid, prepaidCents, invoicedCents, roundingCents: rounding, surplusCents: surplus, perUnitCents: perUnit, warnings };
+}
+
+/** True when every cent reconciles: invoiced + already paid + team-covered = total + extra chipped in. */
+export function balances(a: Allocation, invoiced: number): boolean {
+  return invoiced === a.invoicedCents && invoiced + a.prepaidCents + a.absorbedCents === a.totalCents + a.surplusCents;
 }
 
 const METHOD: Record<PrepaidMethod, string> = { cash: "cash", venmo: "Venmo", zelle: "Zelle", check: "check", other: "outside PayPal" };
@@ -234,8 +265,10 @@ export function invoicesFor(charge: Pick<Charge, "title" | "lines"> & { prepaid?
   }
   const out: { payerFamilyId: string; items: InvoiceItem[]; amountCents: number; prepaidCents: number }[] = [];
   for (const [payerFamilyId, items] of groups) {
-    const paid = charge.prepaid?.find((p) => p.familyId === payerFamilyId);
-    let credit = paid?.amountCents ?? 0;
+    const paidList = charge.prepaid?.filter((p) => p.familyId === payerFamilyId) ?? [];
+    const paid = paidList[0];
+    let credit = paidList.reduce((a, p) => a + p.amountCents, 0);
+    const totalCredit = credit;
     // PayPal invoice items are positive, so apply the credit by reducing items (own share first).
     const net = items
       .map((it) => {
@@ -245,7 +278,7 @@ export function invoicesFor(charge: Pick<Charge, "title" | "lines"> & { prepaid?
       })
       .filter((it) => it.amountCents > 0);
     const amountCents = net.reduce((a, i) => a + i.amountCents, 0);
-    if (amountCents > 0) out.push({ payerFamilyId, items: net, amountCents, prepaidCents: paid?.amountCents ?? 0 });
+    if (amountCents > 0) out.push({ payerFamilyId, items: net, amountCents, prepaidCents: totalCredit });
   }
   return out;
 }

@@ -6,14 +6,20 @@ export function balanceCents(state: AppState): number {
   return state.events.reduce((a, e) => a + e.amountCents, 0);
 }
 
+/** Today's date where the team plays (YYYY-MM-DD), so "late" flips at the team's midnight, not the server's. */
+export function teamToday(now = Date.now()): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: process.env.SIDELINE_TIMEZONE || "America/Los_Angeles" }).format(new Date(now));
+}
+
 export function isLate(inv: Invoice, charge: Charge | undefined, now = Date.now()): boolean {
   if (inv.status !== "SENT" || !charge?.dueDate) return false;
-  return new Date(`${charge.dueDate}T23:59:59`).getTime() < now;
+  return teamToday(now) > charge.dueDate;
 }
 
 export function daysLate(charge: Charge | undefined, now = Date.now()): number {
   if (!charge?.dueDate) return 0;
-  return Math.max(0, Math.floor((now - new Date(`${charge.dueDate}T23:59:59`).getTime()) / DAY_MS));
+  const days = Math.round((Date.parse(`${teamToday(now)}T00:00:00Z`) - Date.parse(`${charge.dueDate}T00:00:00Z`)) / DAY_MS);
+  return Math.max(0, days);
 }
 
 export interface ChargeStats {
@@ -41,7 +47,7 @@ export function chargeStats(state: AppState, charge: Charge, now = Date.now()): 
     billedCents: invs.reduce((a, i) => a + i.amountCents, 0) + prepaidCents,
     collectedCents: paid.reduce((a, i) => a + i.amountCents, 0) + prepaidCents,
     prepaidCents,
-    outstandingCents: invs.filter((i) => i.status === "SENT").reduce((a, i) => a + i.amountCents, 0),
+    outstandingCents: invs.filter((i) => i.status === "SENT" || i.status === "DRAFT").reduce((a, i) => a + i.amountCents, 0),
     absorbedCents: charge.absorbedCents,
     invoices: invs.length,
     paid: paid.length,

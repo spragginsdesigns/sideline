@@ -31,7 +31,7 @@ export function Scoreboard({ data, charge }: { data: DashboardView; charge: Char
         <Tile label="Still owed" sub={stats && stats.late > 0 ? `${stats.late} famil${stats.late === 1 ? "y" : "ies"} past due` : "Nobody past due"}>
           <span className={`led text-2xl font-bold sm:text-[2rem] ${stats && stats.late > 0 ? "led-coral" : "led-amber"}`}>{money(stats?.outstandingCents ?? 0)}</span>
         </Tile>
-        <Tile label="Families paid" sub={stats?.absorbedCents ? `${money(stats.absorbedCents)} scholarship covered by the team` : `${pct}% of this charge`}>
+        <Tile label="Invoices paid" sub={stats?.absorbedCents ? `${money(stats.absorbedCents)} covered by the team fund` : `${pct}% of this charge`}>
           <span className="led text-2xl font-bold text-chalk sm:text-[2rem]">
             {stats?.paid ?? 0}
             <span className="text-chalk-faint">/{stats?.invoices ?? 0}</span>
@@ -60,7 +60,7 @@ function Donut({ collected, outstanding, absorbed }: { collected: number; outsta
     const slices = [
       { what: "Collected", cents: collected, fill: "#10b981" },
       { what: "Still owed", cents: outstanding, fill: "#f59e0b" },
-      { what: "Scholarship", cents: absorbed, fill: "#38bdf8" },
+      { what: "Team-covered", cents: absorbed, fill: "#38bdf8" },
     ].filter((d) => d.cents > 0);
     return {
       width: 132,

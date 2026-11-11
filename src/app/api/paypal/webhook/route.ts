@@ -16,7 +16,9 @@ export async function POST(req: Request) {
   try {
     const result = await handlePayPalEvent(JSON.parse(rawBody), "paypal-webhook");
     console.log(`[sideline] webhook ${headers["paypal-transmission-id"]}: ${result.note}`);
-    return NextResponse.json(result);
+    // Unmatched payment events get a 404 so PayPal retries them later; other event types are acknowledged.
+    const ours = /^(INVOICING\.INVOICE\.(PAID|CANCELLED)|PAYMENT\.PAYOUTS-ITEM\.)/.test(String(JSON.parse(rawBody).event_type));
+    return NextResponse.json(result, { status: !result.handled && !result.duplicate && ours ? 404 : 200 });
   } catch (e) {
     console.error(`[sideline] webhook failed: ${(e as Error).message}`);
     return NextResponse.json({ error: "handler failed" }, { status: 500 });

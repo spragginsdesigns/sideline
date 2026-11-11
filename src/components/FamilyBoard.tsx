@@ -156,7 +156,7 @@ export function FamilyBoard({
   }, [rows]);
 
   const totals = useMemo<BoardTotals>(() => {
-    const invs = rows.filter((r) => r.invoice || r.prepaid);
+    const invs = rows.filter((r) => (r.invoice && r.invoice.status !== "CANCELLED") || r.prepaid);
     return {
       billed: invs.reduce((a, r) => a + (r.invoice?.amountCents ?? 0) + (r.prepaid?.amountCents ?? 0), 0),
       collected: invs.reduce((a, r) => a + (r.invoice?.status === "PAID" ? r.invoice.amountCents : 0) + (r.prepaid?.amountCents ?? 0), 0),

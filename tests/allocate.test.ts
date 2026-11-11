@@ -31,7 +31,7 @@ const invoiced = (a: ReturnType<typeof allocate>) => invoicesFor({ title: "x", l
 function balanced(a: ReturnType<typeof allocate>) {
   const inv = invoiced(a).reduce((s, i) => s + i.amountCents, 0);
   assert.equal(inv, a.invoicedCents);
-  assert.equal(inv + a.prepaidCents + a.absorbedCents, a.totalCents);
+  assert.equal(inv + a.prepaidCents + a.absorbedCents, a.totalCents + a.surplusCents);
 }
 
 test("splitExact always sums to the total", () => {
@@ -132,5 +132,34 @@ test("paid half in cash credits half of that family's own bill (two players)", (
   const a = allocate(rules({ amountKind: "per_player", amountCents: 3750, prepaid: [{ familyId: id("Reyes"), amountCents: null, fraction: 0.5, method: "cash" }] }), fams);
   assert.equal(invoiced(a).find((i) => i.payerFamilyId === id("Reyes"))!.amountCents, 3750);
   assert.equal(a.prepaidCents, 3750);
+  balanced(a);
+});
+
+test("two payments outside PayPal from one family are both credited, and capped at the bill", () => {
+  const a = allocate(rules({ prepaid: [{ familyId: id("Garcia"), amountCents: 1000, method: "cash" }, { familyId: id("Garcia"), amountCents: 1000, method: "venmo" }] }), fams);
+  const g = invoiced(a).find((i) => i.payerFamilyId === id("Garcia"))!;
+  assert.equal(g.amountCents, a.perUnitCents! - 2000);
+  balanced(a);
+  const b = allocate(rules({ prepaid: [{ familyId: id("Lee"), amountCents: null, method: "cash" }, { familyId: id("Lee"), amountCents: null, method: "cash" }] }), fams);
+  assert.equal(b.prepaid.find((p) => p.familyId === id("Lee"))!.amountCents, b.perUnitCents);
+  balanced(b);
+});
+
+test("split among others works for per-family charges too", () => {
+  const a = allocate(rules({ amountKind: "per_family", amountCents: 3500, scholarshipFamilyIds: [id("Ortiz")], scholarshipPolicy: "split_among_others" }), fams);
+  assert.equal(a.totalCents, 3500 * fams.length);
+  assert.equal(invoiced(a).reduce((s, i) => s + i.amountCents, 0), 3500 * fams.length);
+  balanced(a);
+});
+
+test("a family chipping in more than a share is tracked as surplus, not lost", () => {
+  const a = allocate(rules({ adjustments: [{ familyId: id("Garcia"), fraction: null, amountCents: 8000, reason: "Garcias chipping in extra" }] }), fams);
+  assert.equal(a.surplusCents, 8000 - a.perUnitCents!);
+  balanced(a);
+});
+
+test("a zero fraction for an earlier payment credits nothing", () => {
+  const a = allocate(rules({ prepaid: [{ familyId: id("Lee"), amountCents: null, fraction: 0, method: "cash" }] }), fams);
+  assert.equal(a.prepaidCents, 0);
   balanced(a);
 });
