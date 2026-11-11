@@ -72,6 +72,7 @@ const HOUSE_RULES = `House rules for this dashboard (Sideline, a youth sports te
 - Amounts are US dollars. Titles are short and plain: "Referee payouts", not "Referee Payout Analysis".
 - Category values are exact. In Family dues, status is Paid, Open, Late, Team fund or Covered. In the Team ledger, direction is "Money in" or "Money out". In Games & referees, the PayPal payout is "Paid by PayPal", "In flight", "Failed" or "Not yet". Read a field's description in the schema before filtering on it.
 - Add a filter only when the request needs one. Spending by category needs none: sum "Money out" by Category.
+- Make widgets big enough to read. The page is 24 columns wide: a chart or table is at least 12 columns wide and 14 rows tall, and the first widget on an empty page spans all 24 columns.
 - A widget that shows no data is not finished. If a query returns no rows, fix or remove its filter before reporting back.
 - Two custom widget types exist beside the built-in ones. "sideline-scoreboard" is a stadium scoreboard and takes all three fields from Family dues: home = dues.collected (sum), away = dues.outstanding (sum), roster = dues.family. "sideline-bench" shows one jersey per family, coloured by status, also from Family dues.`;
 
