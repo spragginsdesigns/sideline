@@ -2,7 +2,7 @@
 
 **The AI treasurer for youth and rec sports teams, built on PayPal.**
 
-**Live demo:** https://sideline.172-235-32-223.sslip.io (runs Sideline's PayPal simulator until sandbox keys are configured; the banner says so). Try the board, paste a group-chat message, then open a family's pay page on your phone.
+**Live demo:** https://sideline.172-235-32-223.sslip.io (runs Sideline's PayPal simulator until sandbox keys are configured; the banner says so). Try the board, paste a group-chat message, open a family's pay page on your phone, then open **Studio** and ask the treasurer agent to chart who still owes.
 
 Every youth team has a volunteer parent collecting dues from 12 to 20 families. They also handle the exceptions (siblings, a scholarship kid, one family covering for another), pay the referees, and answer "where did our money go?". Today that runs on a group chat, Venmo requests and a spreadsheet.
 
@@ -96,6 +96,8 @@ The hosted demo is one shared team, so it sets a few optional limits (all off by
 | `SIDELINE_AI_DAILY_CAP` | 400 | AI calls the deployment can make per day |
 | `SIDELINE_IDLE_RESET_MINUTES` | 30 | the demo team resets after 30 idle minutes, so every visitor starts fresh |
 | `SIDELINE_MAX_CHARGES` | 25 | most charges the shared team can hold |
+
+The Studio agents have their own budget, because one question to them is 10 to 25 model turns across six agents. These are always on, with defaults: `SIDELINE_AI_TURNS_PER_VISITOR_PER_MINUTE` (60), `SIDELINE_AI_TURNS_PER_MINUTE` (240), `SIDELINE_AI_TURNS_PER_DAY` (8000) and `SIDELINE_AI_TOKENS_PER_DAY` (40,000,000).
 
 ## Project layout
 

@@ -187,6 +187,11 @@ export default function StudioBoard({ initial }: { initial: StudioTables }) {
           </div>
         </div>
       </div>
+      {initial.mode === "simulator" && (
+        <div className="border-b border-led/20 bg-led/[0.07] px-4 py-1.5 text-center text-xs text-led-bright">
+          Demo mode: no PayPal keys are set, so PayPal responses and webhooks are simulated on this server.
+        </div>
+      )}
       <div className="min-h-0 flex-1">
         <LayoutGuard>
           <AgStudioProvider modules={MODULES} licenseKey={LICENSE_KEY}>

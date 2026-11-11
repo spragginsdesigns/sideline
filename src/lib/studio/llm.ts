@@ -4,6 +4,7 @@
 import type OpenAI from "openai";
 import { openai } from "../ai/client.ts";
 import { AI_MODEL } from "../config.ts";
+import { DemoLimitError } from "../demoGuard.ts";
 
 type Json = Record<string, unknown>;
 
@@ -149,11 +150,11 @@ export function takeTurnBudget(who = "local", now = Date.now(), cost = 1): void 
   const mine = (b.byVisitor.get(who) ?? []).filter((t) => now - t < MINUTE);
   const today = new Date(now).toISOString().slice(0, 10);
   if (b.tokens.day !== today) b.tokens = { day: today, used: 0 };
-  const busy = new Error("The AI treasurer is busy right now. Try again in a minute.");
+  const busy = new DemoLimitError("The AI treasurer is busy right now. Try again in a minute.");
   if (mine.length + cost > limit("SIDELINE_AI_TURNS_PER_VISITOR_PER_MINUTE", 60)) throw busy;
   if (b.all.filter((t) => now - t < MINUTE).length + cost > limit("SIDELINE_AI_TURNS_PER_MINUTE", 240)) throw busy;
   if (b.all.length + cost > limit("SIDELINE_AI_TURNS_PER_DAY", 8000) || b.tokens.used >= limit("SIDELINE_AI_TOKENS_PER_DAY", 40_000_000)) {
-    throw new Error("The AI treasurer has answered all it can today. It is back tomorrow.");
+    throw new DemoLimitError("The AI treasurer has answered all it can today. It is back tomorrow.");
   }
   for (let i = 0; i < cost; i++) {
     mine.push(now);
