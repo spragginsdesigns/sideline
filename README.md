@@ -2,6 +2,8 @@
 
 **The AI treasurer for youth and rec sports teams, built on PayPal.**
 
+**Live demo:** https://sideline.172-235-32-223.sslip.io (runs Sideline's PayPal simulator until sandbox keys are configured; the banner says so). Try the board, paste a group-chat message, then open a family's pay page on your phone.
+
 Every youth team has a volunteer parent collecting dues from 12 to 20 families. They also handle the exceptions (siblings, a scholarship kid, one family covering for another), pay the referees, and answer "where did our money go?". Today that runs on a group chat, Venmo requests and a spreadsheet.
 
 Sideline turns that into a scoreboard:
@@ -64,6 +66,17 @@ npm test                     # money engine + PayPal client tests
 3. Expose the app (for example with `ngrok http 3000`), set `SIDELINE_PUBLIC_URL`, and add a webhook for `<url>/api/paypal/webhook` subscribed to `INVOICING.INVOICE.PAID`, `INVOICING.INVOICE.CANCELLED` and `PAYMENT.PAYOUTS-ITEM.*`. Put its id in `PAYPAL_WEBHOOK_ID`. Without a public URL, the board still picks up payments by polling.
 
 The demo team (Valley Hawks U11 Girls, Fresno CA) and every family in it are fictional. **Reset demo team** on the board restores the starting state.
+
+### Public demo settings
+
+The hosted demo is one shared team, so it sets a few optional limits (all off by default):
+
+| Variable | Demo value | What it does |
+|---|---|---|
+| `SIDELINE_AI_PER_IP_HOURLY` | 40 | AI calls one visitor can make per hour |
+| `SIDELINE_AI_DAILY_CAP` | 400 | AI calls the deployment can make per day |
+| `SIDELINE_IDLE_RESET_MINUTES` | 30 | the demo team resets after 30 idle minutes, so every visitor starts fresh |
+| `SIDELINE_MAX_CHARGES` | 25 | most charges the shared team can hold |
 
 ## Project layout
 
