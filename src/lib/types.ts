@@ -106,7 +106,7 @@ export interface Payout {
   amountCents: number;
   createdAt: string;
   paidAt: string | null;
-  attempt?: number; // payout attempts for this game (a FAILED/UNCLAIMED payout can be retried)
+  attempt?: number; // payout attempts for this game (a FAILED payout can be retried)
 }
 
 export interface Game {
@@ -129,6 +129,7 @@ export type LedgerEventType =
   | "payout.created"
   | "payout.succeeded"
   | "payout.failed"
+  | "payout.unclaimed"
   | "payment.offline"
   | "opening.balance"
   | "expense";
@@ -146,6 +147,7 @@ export interface LedgerEvent {
 
 export interface AppState {
   version: number;
+  epoch?: string; // unique per seeded demo team; keeps PayPal batch ids unique across demo resets
   team: Team;
   charges: Charge[];
   invoices: Invoice[];

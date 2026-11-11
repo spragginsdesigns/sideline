@@ -10,6 +10,7 @@ const ICON: Record<string, { Icon: React.ComponentType<{ size?: number }>; tone:
   "payout.succeeded": { Icon: Whistle, tone: "text-sky bg-sky/12" },
   "payout.created": { Icon: Flag, tone: "text-chalk-dim bg-chalk/8" },
   "payout.failed": { Icon: Flag, tone: "text-coral-soft bg-coral/12" },
+  "payout.unclaimed": { Icon: Whistle, tone: "text-led-bright bg-led/12" },
   "invoice.reminder": { Icon: BellRing, tone: "text-led-bright bg-led/12" },
   "charge.created": { Icon: FileText, tone: "text-chalk bg-chalk/8" },
   expense: { Icon: ArrowUpRight, tone: "text-coral-soft bg-coral/12" },

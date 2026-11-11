@@ -73,6 +73,8 @@ export interface PayPalGateway {
   recordPayment(paypalInvoiceId: string, opts: { method: "CASH" | "CHECK"; amountCents: number; date: string; note: string }): Promise<void>;
   getInvoice(paypalInvoiceId: string): Promise<RemoteInvoice>;
   createPayout(input: PayoutInput): Promise<CreatedPayout>;
+  /** Status of the (single) item in a payout batch: SUCCESS, UNCLAIMED, PENDING, FAILED, ... */
+  getPayoutItem(batchId: string): Promise<{ itemId: string | null; status: string }>;
   listTransactions(range: { startDate: string; endDate: string }): Promise<RemoteTransaction[]>;
   /** Returns true when PayPal confirms the webhook signature. */
   verifyWebhook(input: WebhookVerifyInput): Promise<boolean>;

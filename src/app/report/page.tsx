@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Season report · Sideline" };
 function category(type: string, summary: string): string {
   if (type === "opening.balance") return "Carried over";
   if (type === "invoice.paid" || type === "payment.offline") return "Family dues";
-  if (type === "payout.succeeded") return "Referees";
+  if (type === "payout.succeeded" || type === "payout.unclaimed") return "Referees";
   if (summary.startsWith("Scholarship")) return "Scholarships";
   if (/uniform/i.test(summary)) return "Uniforms";
   if (/league|registration/i.test(summary)) return "League fees";
@@ -42,7 +42,7 @@ export default function ReportPage() {
       }
       continue;
     }
-    rows.push({ date: e.at, what: e.summary, category: category(e.type, e.summary), cents: e.amountCents, viaPayPal: e.source.startsWith("paypal") || e.type === "payout.succeeded" });
+    rows.push({ date: e.at, what: e.summary, category: category(e.type, e.summary), cents: e.amountCents, viaPayPal: e.source.startsWith("paypal") || e.type === "payout.succeeded" || e.type === "payout.unclaimed" });
   }
 
   const byCategory = new Map<string, number>();

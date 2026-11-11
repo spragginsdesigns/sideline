@@ -16,14 +16,18 @@ export async function GET() {
       await publishSeedInvoices();
     })();
     await g.__sidelineBoot;
-    // Public demo: after a long idle stretch the next visitor gets a fresh team (simulator mode only).
-    if (simulator() && idleExpired()) {
+    // Public demo: after a long idle stretch the next visitor gets a fresh team. In live mode the
+    // reset publishes the seeded open invoices to PayPal again as new invoices.
+    if (idleExpired()) {
       await resetState();
       simulator()?.reset();
       rehydrateAll();
       await publishSeedInvoices();
     }
-    if (gateway().mode === "live" && Date.now() - (g.__sidelineLastSync ?? 0) > 10_000) {
+    // Fallback for when webhooks can't reach the app (e.g. localhost). On a public URL the
+    // signed webhook is the normal path, so SIDELINE_SYNC_SECONDS can be set much higher.
+    const syncMs = (Number(process.env.SIDELINE_SYNC_SECONDS) || 10) * 1000;
+    if (gateway().mode === "live" && Date.now() - (g.__sidelineLastSync ?? 0) > syncMs) {
       g.__sidelineLastSync = Date.now();
       await syncFromPayPal();
     }

@@ -193,6 +193,10 @@ export class SimulatedPayPalGateway implements PayPalGateway {
     return { batchId, batchStatus: "PENDING" };
   }
 
+  async getPayoutItem(_batchId: string): Promise<{ itemId: string | null; status: string }> {
+    return { itemId: null, status: "SUCCESS" };
+  }
+
   async listTransactions(range: { startDate: string; endDate: string }): Promise<RemoteTransaction[]> {
     return this.tx.filter((t) => t.date >= range.startDate && t.date <= range.endDate);
   }

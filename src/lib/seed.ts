@@ -140,5 +140,5 @@ export function seedState(now = Date.now()): AppState {
   }
   events.sort((a, b) => a.at.localeCompare(b.at));
 
-  return { version: 1, team, charges: [uniforms], invoices, games, events, processedWebhookIds: [] };
+  return { version: 1, epoch: now.toString(36), team, charges: [uniforms], invoices, games, events, processedWebhookIds: [] };
 }

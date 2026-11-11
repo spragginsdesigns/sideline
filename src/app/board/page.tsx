@@ -154,11 +154,9 @@ export default function BoardPage() {
                 }}
               />
             </Section>
-            {data.mode === "simulator" && (
-              <button className="flex items-center justify-center gap-2 text-xs text-chalk-faint hover:text-chalk" onClick={resetDemo}>
-                <RotateCcw size={13} /> Reset demo team
-              </button>
-            )}
+            <button className="flex items-center justify-center gap-2 text-xs text-chalk-faint hover:text-chalk" onClick={resetDemo}>
+              <RotateCcw size={13} /> Reset demo team
+            </button>
           </div>
         </div>
       </main>

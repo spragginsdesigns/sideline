@@ -56,7 +56,11 @@ export function useDashboard(intervalMs = 2000) {
       const nextP = new Map(view.games.map((g) => [g.id, g.payout?.status ?? "none"]));
       if (prevP) {
         for (const g of view.games) {
-          if (g.payout?.status === "SUCCESS" && prevP.get(g.id) !== "SUCCESS") {
+          if (g.payout?.status === "UNCLAIMED" && prevP.get(g.id) !== "UNCLAIMED") {
+            const ref = view.team.referees.find((r) => r.id === g.refereeId);
+            pushToast({ tone: "sky", title: `Referee ${ref?.name ?? ""} paid`, body: `${formatUsd(g.payout.amountCents)} sent by PayPal Payouts · they claim it by email` });
+          }
+          if (g.payout?.status === "SUCCESS" && prevP.get(g.id) !== "SUCCESS" && prevP.get(g.id) !== "UNCLAIMED") {
             const ref = view.team.referees.find((r) => r.id === g.refereeId);
             pushToast({ tone: "sky", title: `Referee ${ref?.name ?? ""} paid`, body: `${formatUsd(g.payout.amountCents)} PayPal payout succeeded` });
           }

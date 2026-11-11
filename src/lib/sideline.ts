@@ -369,11 +369,13 @@ export async function sendReminders(reminders: { invoiceId: string; subject: str
 /** Mark a game final and pay its referee through PayPal Payouts. */
 export async function finalizeGame(gameId: string, score: { us: number; them: number }) {
   const team = readState().team;
+  const epoch = readState().epoch ?? "0";
   // Claim the game before any network call, so a double-click or a second tab can't pay the referee twice.
   const claim = await mutate((s) => {
     const g = s.games.find((x) => x.id === gameId);
     if (!g) throw new Error("Unknown game");
-    if (g.payout && !["FAILED", "UNCLAIMED"].includes(g.payout.status)) throw new Error(g.payout.status === "SUCCESS" ? "This game is already final and the referee was paid." : "The referee payout for this game is already on its way.");
+    // Only a FAILED payout may be retried; an UNCLAIMED one is already paid out and waiting for the ref.
+    if (g.payout && g.payout.status !== "FAILED") throw new Error(g.payout.status === "SUCCESS" ? "This game is already final and the referee was paid." : "The referee payout for this game is already on its way.");
     const attempt = (g.payout?.attempt ?? 0) + 1;
     if (new Date(g.date).getTime() > Date.now() + 3 * 3600_000) throw new Error("That game hasn't been played yet.");
     const ref = s.team.referees.find((r) => r.id === g.refereeId)!;
@@ -383,10 +385,12 @@ export async function finalizeGame(gameId: string, score: { us: number; them: nu
   try {
     const payout = await gateway().createPayout({
       // One payout per game, ever: PayPal rejects a reused sender_batch_id.
-      senderBatchId: `${team.shortName}-${team.id}-${gameId}${claim.attempt > 1 ? `-r${claim.attempt}` : ""}`.slice(0, 127),
+      // One payout per game per demo team: PayPal rejects a reused sender_batch_id for 30 days.
+      senderBatchId: `${team.shortName}-${epoch}-${gameId}${claim.attempt > 1 ? `-r${claim.attempt}` : ""}`.slice(0, 127),
       emailSubject: `${team.name} referee fee`,
       emailMessage: `Thanks for reffing ${team.name} vs ${claim.opponent}!`,
-      items: [{ receiverEmail: claim.ref.email, amountCents: claim.ref.feeCents, note: `Referee fee: vs ${claim.opponent}`, senderItemId: gameId }],
+      // SIDELINE_REFEREE_PAYOUT_EMAIL routes demo payouts to a real (sandbox) PayPal account.
+      items: [{ receiverEmail: process.env.SIDELINE_REFEREE_PAYOUT_EMAIL || claim.ref.email, amountCents: claim.ref.feeCents, note: `Referee fee: vs ${claim.opponent}`, senderItemId: gameId }],
     });
     await mutate((s) => {
       const g = s.games.find((x) => x.id === gameId)!;
@@ -427,6 +431,22 @@ export async function syncFromPayPal(): Promise<{ checked: number; updated: numb
       }
     } catch (e) {
       console.warn(`[sideline] sync failed for ${inv.paypalInvoiceId}: ${(e as Error).message}`);
+    }
+  }
+  // Payouts: a PENDING item that PayPal has settled (webhooks can lag in sandbox).
+  for (const game of readState().games.filter((g) => g.payout && g.payout.batchId && g.payout.status === "PENDING")) {
+    try {
+      const item = await gw.getPayoutItem(game.payout!.batchId);
+      const map: Record<string, string> = { SUCCESS: "SUCCEEDED", UNCLAIMED: "UNCLAIMED", FAILED: "FAILED", RETURNED: "RETURNED", BLOCKED: "BLOCKED" };
+      if (map[item.status]) {
+        const r = await handlePayPalEvent(
+          { id: `SYNC-${game.payout!.batchId}-${item.status}`, event_type: `PAYMENT.PAYOUTS-ITEM.${map[item.status]}`, resource: { payout_batch_id: game.payout!.batchId, payout_item_id: item.itemId } },
+          "paypal-sync",
+        );
+        if (r.handled) updated++;
+      }
+    } catch (e) {
+      console.warn(`[sideline] payout sync failed for ${game.payout!.batchId}: ${(e as Error).message}`);
     }
   }
   return { checked: open.length, updated };

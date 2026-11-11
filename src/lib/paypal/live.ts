@@ -366,6 +366,12 @@ export class LivePayPalGateway implements PayPalGateway {
     return { batchId: header.payout_batch_id, batchStatus: header.batch_status ?? "PENDING" };
   }
 
+  async getPayoutItem(batchId: string): Promise<{ itemId: string | null; status: string }> {
+    const body = await this.request("GET", `/v1/payments/payouts/${encodeURIComponent(batchId)}`);
+    const item = Array.isArray(body?.items) ? body.items[0] : null;
+    return { itemId: item?.payout_item_id ?? null, status: item?.transaction_status ?? body?.batch_header?.batch_status ?? "UNKNOWN" };
+  }
+
   // ----- transaction search v1 -----
 
   async listTransactions(range: { startDate: string; endDate: string }): Promise<RemoteTransaction[]> {

@@ -100,12 +100,21 @@ function apply(state: AppState, event: IncomingEvent, source: EventSource): Hand
         result = { handled: false, duplicate: true, note: "payout already in that state" };
         break;
       }
+      const before = game.payout.status;
       game.payout.status = status;
       game.payout.itemId = str(res.payout_item_id);
       const ref = state.team.referees.find((r) => r.id === game.refereeId);
-      if (ok) {
+      if (ok && before === "UNCLAIMED") {
+        // The money already left the team account when the payout went out unclaimed.
+        game.payout.paidAt = new Date().toISOString();
+        state.events.push({ id: newId("e"), at: game.payout.paidAt, type: "payout.succeeded", summary: `Referee ${ref?.name ?? ""} claimed the payout for vs ${game.opponent}`, amountCents: 0, source: evSource, ref: batchId, paypalEventId: event.id });
+      } else if (ok) {
         game.payout.paidAt = new Date().toISOString();
         state.events.push({ id: newId("e"), at: game.payout.paidAt, type: "payout.succeeded", summary: `Referee ${ref?.name ?? ""} paid for vs ${game.opponent}`, amountCents: -game.payout.amountCents, source: evSource, ref: batchId, paypalEventId: event.id });
+      } else if (status === "UNCLAIMED") {
+        // PayPal sent it; the ref has no PayPal account yet and gets an email to claim it.
+        game.payout.paidAt = new Date().toISOString();
+        state.events.push({ id: newId("e"), at: game.payout.paidAt, type: "payout.unclaimed", summary: `Referee ${ref?.name ?? ""} sent their fee for vs ${game.opponent} (waiting for them to claim it in PayPal)`, amountCents: -game.payout.amountCents, source: evSource, ref: batchId, paypalEventId: event.id });
       } else {
         state.events.push({ id: newId("e"), at: new Date().toISOString(), type: "payout.failed", summary: `Referee payout for vs ${game.opponent}: ${status.toLowerCase()}`, amountCents: 0, source: evSource, ref: batchId, paypalEventId: event.id });
       }

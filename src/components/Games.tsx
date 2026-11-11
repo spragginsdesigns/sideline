@@ -74,7 +74,12 @@ function GameRow({ game, data, isToday, onError }: { game: Game; data: Dashboard
             <Spinner /> Payout processing…
           </span>
         )}
-        {game.payout && ["FAILED", "UNCLAIMED"].includes(game.payout.status) && <span className="text-coral-soft">Payout {game.payout.status.toLowerCase()}</span>}
+        {game.payout?.status === "UNCLAIMED" && (
+          <span className="flex items-center gap-1 text-led-bright" title="PayPal sent it; the ref gets an email to claim it">
+            <CheckCircle2 size={15} /> Sent via PayPal Payouts · ref claims by email
+          </span>
+        )}
+        {game.payout?.status === "FAILED" && <span className="text-coral-soft">Payout failed</span>}
         {!game.payout && !past && (
           <span className="flex items-center gap-1 text-chalk-faint">
             <Clock size={14} /> Pays out when final
