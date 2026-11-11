@@ -6,7 +6,12 @@ import { daysLate, isLate } from "../summary.ts";
 
 const dollars = (cents: number) => Math.round(cents) / 100;
 
-export type DuesStatus = "Paid" | "Open" | "Late" | "Team fund";
+/** The calendar day where the team plays, so a 7pm payment is not filed under tomorrow. */
+function teamDay(iso: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: process.env.SIDELINE_TIMEZONE || "America/Los_Angeles" }).format(new Date(iso));
+}
+
+export type DuesStatus = "Paid" | "Open" | "Late" | "Team fund" | "Covered";
 
 /** One row per family per charge: what they owe, what they paid, and how. */
 export interface DuesRow {
@@ -87,7 +92,24 @@ export function studioTables(state: AppState, mode: "live" | "simulator", now = 
   const dues: DuesRow[] = [];
   for (const charge of state.charges) {
     for (const fam of state.team.families) {
-      const base = {
+      const own = charge.lines.filter((l) => l.familyId === fam.id);
+      if (own.length === 0 || own.some((l) => l.reason === "excluded")) continue; // not on this charge
+      const inv = state.invoices.find((i) => i.chargeId === charge.id && i.payerFamilyId === fam.id && i.status !== "CANCELLED");
+      const prepaid = (charge.prepaid ?? []).filter((p) => p.familyId === fam.id);
+      const prepaidCents = prepaid.reduce((a, p) => a + p.amountCents, 0);
+      // What the team fund absorbed for this family. Charges made by the money engine record it per
+      // family; the season import carries it on the scholarship line itself.
+      const coveredCents = charge.absorbedByFamily
+        ? (charge.absorbedByFamily[fam.id] ?? 0)
+        : own.filter((l) => l.payerFamilyId === null && l.reason === "scholarship").reduce((a, l) => a + l.amountCents, 0);
+      // A family whose whole share another family pays has no invoice of its own.
+      const payer = own.every((l) => l.payerFamilyId && l.payerFamilyId !== fam.id) ? state.team.families.find((f) => f.id === own[0].payerFamilyId) : undefined;
+      const late = inv ? isLate(inv, charge, now) : false;
+      const paidCents = (inv?.status === "PAID" ? inv.amountCents : 0) + prepaidCents;
+      const openCents = inv && inv.status !== "PAID" ? inv.amountCents : 0;
+      const status: DuesStatus = inv ? (inv.status === "PAID" ? "Paid" : late ? "Late" : "Open") : prepaidCents > 0 ? "Paid" : payer ? "Covered" : "Team fund";
+      dues.push({
+        id: `${charge.id}|${fam.id}`,
         family: fam.surname,
         guardian: fam.guardian,
         language: LANGUAGE_NAMES[fam.language],
@@ -95,19 +117,6 @@ export function studioTables(state: AppState, mode: "live" | "simulator", now = 
         jersey: fam.players.map((p) => `#${p.jersey}`).join(" "),
         charge: charge.title,
         due_date: charge.dueDate,
-      };
-      const inv = state.invoices.find((i) => i.chargeId === charge.id && i.payerFamilyId === fam.id && i.status !== "CANCELLED");
-      const prepaid = (charge.prepaid ?? []).filter((p) => p.familyId === fam.id);
-      const prepaidCents = prepaid.reduce((a, p) => a + p.amountCents, 0);
-      const coveredCents = charge.lines.filter((l) => l.familyId === fam.id && l.payerFamilyId === null && l.reason === "scholarship").reduce((a, l) => a + l.amountCents, 0);
-      if (!inv && prepaidCents === 0 && coveredCents === 0) continue; // covered by another family, or not taking part
-      const late = inv ? isLate(inv, charge, now) : false;
-      const paidCents = (inv?.status === "PAID" ? inv.amountCents : 0) + prepaidCents;
-      const openCents = inv && inv.status !== "PAID" ? inv.amountCents : 0;
-      const status: DuesStatus = inv ? (inv.status === "PAID" ? "Paid" : late ? "Late" : "Open") : prepaidCents > 0 ? "Paid" : "Team fund";
-      dues.push({
-        id: `${charge.id}|${fam.id}`,
-        ...base,
         status,
         billed: dollars(paidCents + openCents),
         collected: dollars(paidCents),
@@ -115,8 +124,17 @@ export function studioTables(state: AppState, mode: "live" | "simulator", now = 
         team_covered: dollars(coveredCents),
         days_late: late ? daysLate(charge, now) : 0,
         nudges_sent: inv?.reminders.length ?? 0,
-        paid_via: inv?.status === "PAID" ? (inv.paidVia ?? "PayPal") : prepaid[0] ? (METHOD[prepaid[0].method] ?? "Outside PayPal") : inv ? "Not paid yet" : "Team fund",
-        paid_date: inv?.paidAt ? inv.paidAt.slice(0, 10) : null,
+        paid_via:
+          inv?.status === "PAID"
+            ? (inv.paidVia ?? "PayPal")
+            : prepaid[0]
+              ? (METHOD[prepaid[0].method] ?? "Outside PayPal")
+              : inv
+                ? "Not paid yet"
+                : payer
+                  ? `Covered by the ${payer.surname} family`
+                  : "Team fund",
+        paid_date: inv?.paidAt ? teamDay(inv.paidAt) : null,
         paypal_invoice: inv?.paypalInvoiceNumber ?? "",
       });
     }
@@ -126,7 +144,7 @@ export function studioTables(state: AppState, mode: "live" | "simulator", now = 
     .filter((e) => e.amountCents !== 0)
     .map((e) => ({
       id: e.id,
-      date: e.at.slice(0, 10),
+      date: teamDay(e.at),
       category: category(e.type, e.summary),
       direction: e.amountCents > 0 ? ("Money in" as const) : ("Money out" as const),
       amount: dollars(e.amountCents),
@@ -141,7 +159,7 @@ export function studioTables(state: AppState, mode: "live" | "simulator", now = 
     const p = g.payout;
     return {
       id: g.id,
-      date: g.date.slice(0, 10),
+      date: teamDay(g.date),
       opponent: g.opponent,
       result: g.score ? `${g.score.us}-${g.score.them}` : "Scheduled",
       referee: ref?.name ?? "",

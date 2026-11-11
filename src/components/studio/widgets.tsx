@@ -12,19 +12,27 @@ type Mapping = Partial<Record<string, AgWidgetField[]>>;
 const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
 const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
 
-/** Run one query for the widget and keep it up to date as the data changes. */
+/**
+ * Run one query for the widget and keep it up to date. A data handle (not a one-off getData) is
+ * what stays live across Studio's own refreshes of the widget: a title edit, a mode switch, a
+ * filter, or a PayPal payment arriving as a transaction all deliver the query's rows again.
+ */
 function useRows(widgetApi: AgWidgetParams["widgetApi"], fields: AgWidgetField[]): Rows | null {
   const [rows, setRows] = useState<Rows | null>(null);
   const key = fields.map((f) => `${f.key}`).join("|");
   useEffect(() => {
-    let alive = true;
     if (fields.length === 0) return;
-    const apply = (r: { results: { rows: Rows }; replaced?: boolean }) => {
-      if (alive && !r.replaced) setRows(r.results.rows);
-    };
-    void widgetApi.getData({ fields }, { queryId: "rows", onDataUpdated: apply }).then(apply);
+    let alive = true;
+    const handle = widgetApi.getDataHandle();
+    handle.open(({ results }) => {
+      for (const { response } of results) {
+        if (alive && !response.replaced) setRows((response.results as { rows: Rows }).rows);
+      }
+    });
+    handle.set("rows", { query: { fields } });
     return () => {
       alive = false;
+      handle.close();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widgetApi, key]);
@@ -88,7 +96,7 @@ function ScoreboardWidget({ widgetApi, dataMapping, context }: AgWidgetParams) {
 
 // --- The bench: one jersey per family --------------------------------------------------------
 
-const TONE: Record<string, string> = { Paid: "paid", Open: "open", Late: "late", "Team fund": "fund" };
+const TONE: Record<string, string> = { Paid: "paid", Open: "open", Late: "late", "Team fund": "fund", Covered: "fund" };
 
 function BenchWidget({ widgetApi, dataMapping }: AgWidgetParams) {
   const map = dataMapping as Mapping;
@@ -103,7 +111,7 @@ function BenchWidget({ widgetApi, dataMapping }: AgWidgetParams) {
   if (rows.length === 0) return <AgNoDataOverlay />;
 
   // A family with two charges shows its worst status.
-  const rank: Record<string, number> = { Late: 3, Open: 2, "Team fund": 1, Paid: 0 };
+  const rank: Record<string, number> = { Late: 4, Open: 3, "Team fund": 2, Covered: 1, Paid: 0 };
   const byFamily = new Map<string, { name: string; jersey: string; status: string; owed: number }>();
   for (const r of rows) {
     const name = String(r[label.key] ?? "");
@@ -156,7 +164,7 @@ export const sidelineWidgets = (base: AgWidgetsConfig): AgWidgetsConfig =>
         minSize: { width: 280, height: 130 },
         ai: {
           description: "A stadium scoreboard for collections: the collected amount as the home score, the amount still owed as the away score, percent collected as the clock, and how many families are paid up.",
-          usage: "Use it once at the top of a page as the headline for dues collection. Map home to a collected amount (sum), away to an outstanding amount (sum) and roster to the family field.",
+          usage: "Use it once at the top of a page as the headline for dues collection. All three fields come from the Family dues table: home = dues.collected (sum), away = dues.outstanding (sum), roster = dues.family. Do not mix in fields from another table.",
         },
       },
       {
@@ -182,8 +190,8 @@ export const sidelineWidgets = (base: AgWidgetsConfig): AgWidgetsConfig =>
         defaultSize: { width: 900, height: 230 },
         minSize: { width: 280, height: 140 },
         ai: {
-          description: "A team bench: one jersey per family, coloured by payment status (green paid, amber open, red late, blue covered by the team fund), with the amount still owed under it.",
-          usage: "Use it to show at a glance which families have paid. Map label to family, status to status, number to jersey and value to the amount still owed (sum).",
+          description: "A team bench: one jersey per family, coloured by payment status (green paid, amber open, red late, blue covered by the team fund or another family), with the amount still owed under it.",
+          usage: "Use it to show at a glance which families have paid. All fields come from the Family dues table: label = dues.family, status = dues.status, number = dues.jersey, value = dues.outstanding (sum).",
         },
       },
     ],

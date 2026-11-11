@@ -219,6 +219,7 @@ export async function createCharge(rules: ChargeRules, sourceMessage: string, cl
       warnings: [...preview.rules.ambiguities, ...preview.allocation.warnings],
       lines: preview.allocation.lines,
       absorbedCents: preview.allocation.absorbedCents,
+      absorbedByFamily: preview.allocation.absorbedByFamily,
       prepaid: preview.allocation.prepaid,
       roundingCents: preview.allocation.roundingCents,
       clientKey: key,
@@ -348,6 +349,11 @@ export async function sendReminders(reminders: { invoiceId: string; subject: str
     const inv = readState().invoices.find((i) => i.id === r.invoiceId);
     if (!inv?.paypalInvoiceId || inv.status !== "SENT") {
       results.push({ invoiceId: r.invoiceId, ok: false, error: "Invoice is not awaiting payment" });
+      continue;
+    }
+    const lastNudge = inv.reminders.at(-1);
+    if (lastNudge && Date.now() - new Date(lastNudge.at).getTime() < 86_400_000) {
+      results.push({ invoiceId: r.invoiceId, ok: false, error: "Already nudged in the last day" });
       continue;
     }
     const link = `${publicBaseUrl()}/pay/${inv.id}`;

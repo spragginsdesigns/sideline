@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { Eye, PlayCircle, RotateCcw, Sparkles } from "lucide-react";
 import { AgStudio, AgStudioProvider } from "ag-studio-react";
@@ -34,6 +34,32 @@ function savedReport(): AgReportState | null {
   }
 }
 
+/** A saved layout that Studio can no longer load must not leave a blank page: forget it and start over. */
+class LayoutGuard extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    try {
+      localStorage.removeItem(STORE_KEY);
+    } catch {
+      // nothing stored
+    }
+  }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="pitch flex h-full flex-col items-center justify-center gap-4 text-chalk-dim">
+        <p>The saved dashboard layout could not be loaded, so it was cleared.</p>
+        <button className="btn btn-primary" onClick={() => window.location.reload()}>
+          Reload the dashboard
+        </button>
+      </div>
+    );
+  }
+}
+
 export default function StudioBoard({ initial }: { initial: StudioTables }) {
   const studioApi = useRef<AgStudioApi | null>(null);
   const last = useRef<StudioTables>(initial);
@@ -50,18 +76,30 @@ export default function StudioBoard({ initial }: { initial: StudioTables }) {
 
   // Live data: poll the server and apply what changed as Studio transactions, so a PayPal webhook
   // moves every widget in place.
+  const polling = useRef(false);
   const poll = useCallback(async () => {
     const engine = studioApi.current?.getDataEngine();
-    if (!engine?.applyTransaction) return;
+    if (!engine?.applyTransaction || polling.current) return; // one poll at a time, so answers apply in order
+    polling.current = true;
     try {
       const res = await fetch("/api/studio/data", { cache: "no-store" });
-      if (!res.ok) return;
+      if (!res.ok) return; // the next tick asks again
       const next = (await res.json()) as StudioTables;
       const diffs = diffTables(last.current, next);
-      if (diffs.length) await engine.applyTransaction(diffs.map((d) => ({ tableId: d.tableId, add: d.add, update: d.update, remove: d.remove })));
+      if (diffs.length) {
+        try {
+          await engine.applyTransaction(diffs.map((d) => ({ tableId: d.tableId, add: d.add, update: d.update, remove: d.remove })));
+        } catch {
+          // A rejected transaction changes nothing, and the same diff would be rejected forever.
+          // Replace the tables wholesale so the dashboard cannot get stuck on old data.
+          engine.update?.({ sources: toSources(next).sources });
+        }
+      }
       last.current = next;
     } catch {
-      // a missed poll is retried on the next tick
+      // network hiccup: the next tick asks again
+    } finally {
+      polling.current = false;
     }
   }, []);
 
@@ -150,26 +188,28 @@ export default function StudioBoard({ initial }: { initial: StudioTables }) {
         </div>
       </div>
       <div className="min-h-0 flex-1">
-        <AgStudioProvider modules={MODULES} licenseKey={LICENSE_KEY}>
-          <AgStudio
-            style={{ height: "100%", width: "100%" }}
-            data={data}
-            mode={mode}
-            theme={sidelineStudioTheme}
-            layout={PAGE_LAYOUT}
-            localeText={LOCALE_TEXT as never}
-            responsiveLayoutBreakpoints={BREAKPOINTS}
-            panels={wide ? undefined : NO_SIDE_PANELS}
-            widgets={sidelineWidgets as never}
-            initialState={initialState}
-            context={context}
-            ai={ai}
-            aiToolDisplay={sidelineToolDisplay as never}
-            onApiReady={(e) => (studioApi.current = e.api as unknown as AgStudioApi)}
-            onStudioReady={() => setReady(true)}
-            onStateUpdated={onStateUpdated}
-          />
-        </AgStudioProvider>
+        <LayoutGuard>
+          <AgStudioProvider modules={MODULES} licenseKey={LICENSE_KEY}>
+            <AgStudio
+              style={{ height: "100%", width: "100%" }}
+              data={data}
+              mode={mode}
+              theme={sidelineStudioTheme}
+              layout={PAGE_LAYOUT}
+              localeText={LOCALE_TEXT as never}
+              responsiveLayoutBreakpoints={BREAKPOINTS}
+              panels={wide ? undefined : NO_SIDE_PANELS}
+              widgets={sidelineWidgets as never}
+              initialState={initialState}
+              context={context}
+              ai={ai}
+              aiToolDisplay={sidelineToolDisplay as never}
+              onApiReady={(e) => (studioApi.current = e.api as unknown as AgStudioApi)}
+              onStudioReady={() => setReady(true)}
+              onStateUpdated={onStateUpdated}
+            />
+          </AgStudioProvider>
+        </LayoutGuard>
       </div>
     </div>
   );

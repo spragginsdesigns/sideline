@@ -27,6 +27,7 @@ export interface Allocation {
   shareCents: Record<string, number>; // each participating family's share before covers/prepaid
   totalCents: number; // sum of every share (stated total plus rounding)
   absorbedCents: number; // the team fund covers this (scholarships, discounts)
+  absorbedByFamily: Record<string, number>; // the same cents, by the family they were absorbed for
   prepaid: { familyId: string; amountCents: number; method: PrepaidMethod }[];
   prepaidCents: number;
   invoicedCents: number;
@@ -108,6 +109,7 @@ export function allocate(rules: ChargeRules, families: Family[]): Allocation {
   const owes = new Map<string, number>();
   const ownNote = new Map<string, string>();
   let absorbed = 0;
+  const absorbedBy = new Map<string, number>();
   let surplus = 0;
   const adjusted = new Map<string, ChargeRules["adjustments"][number]>();
   for (const a of rules.adjustments) {
@@ -123,7 +125,10 @@ export function allocate(rules: ChargeRules, families: Family[]): Allocation {
     const s = share.get(f.id) ?? 0;
     if (scholarship.has(f.id)) {
       owes.set(f.id, 0);
-      if (rules.scholarshipPolicy === "team_absorbs") absorbed += s;
+      if (rules.scholarshipPolicy === "team_absorbs") {
+        absorbed += s;
+        if (s > 0) absorbedBy.set(f.id, s);
+      }
       ownNote.set(f.id, rules.scholarshipPolicy === "team_absorbs" ? "Scholarship: the team fund covers it" : "Scholarship: no charge");
       continue;
     }
@@ -137,6 +142,7 @@ export function allocate(rules: ChargeRules, families: Family[]): Allocation {
     else if (a.amountCents !== null && a.amountCents !== undefined) pay = Math.max(0, Math.round(a.amountCents));
     if (pay > s * 3 && s > 0) warnings.push(`The ${f.surname} family's amount (${(pay / 100).toFixed(2)}) is over three times a normal share. Double-check it.`);
     absorbed += Math.max(0, s - pay);
+    if (s - pay > 0) absorbedBy.set(f.id, s - pay);
     surplus += Math.max(0, pay - s);
     owes.set(f.id, pay);
     ownNote.set(f.id, `${a.reason || "Adjusted"}${pay < s ? `: the team fund covers the other ${((s - pay) / 100).toFixed(2)}` : pay > s ? `: ${((pay - s) / 100).toFixed(2)} extra goes to the team fund` : ""}`);
@@ -231,7 +237,7 @@ export function allocate(rules: ChargeRules, families: Family[]): Allocation {
   const totalCents = [...share.values()].reduce((a, b) => a + b, 0);
   const prepaidCents = prepaid.reduce((a, p) => a + p.amountCents, 0);
   const invoicedCents = lines.reduce((a, l) => a + (l.payerFamilyId ? l.amountCents : 0), 0) - prepaidCents;
-  return { lines, shareCents: Object.fromEntries(share), totalCents, absorbedCents: absorbed, prepaid, prepaidCents, invoicedCents, roundingCents: rounding, surplusCents: surplus, perUnitCents: perUnit, warnings };
+  return { lines, shareCents: Object.fromEntries(share), totalCents, absorbedCents: absorbed, absorbedByFamily: Object.fromEntries(absorbedBy), prepaid, prepaidCents, invoicedCents, roundingCents: rounding, surplusCents: surplus, perUnitCents: perUnit, warnings };
 }
 
 /** True when every cent reconciles: invoiced + already paid + team-covered = total + extra chipped in. */

@@ -66,6 +66,7 @@ export interface Charge {
   warnings: string[];
   lines: ChargeLine[];
   absorbedCents: number; // amount the team fund covers (scholarships, discounts)
+  absorbedByFamily?: Record<string, number>; // the same cents by family (charges created before this field: see the scholarship lines)
   prepaid?: { familyId: string; amountCents: number; method: PrepaidMethod }[]; // paid outside PayPal before invoicing
   roundingCents?: number; // pennies of rounding that go to the team fund
   clientKey?: string; // idempotency key from the treasurer's browser

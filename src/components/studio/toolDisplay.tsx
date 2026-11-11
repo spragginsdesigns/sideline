@@ -47,12 +47,16 @@ const label =
 
 function NudgeCards({ result }: AgAiToolDetailParams) {
   const data = envelope<{ nudges: NudgeDraft[]; note?: string }>(result);
-  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [state, setState] = useState<"idle" | "sending" | "error">("idle");
   const [error, setError] = useState("");
+  // Invoices whose reminder PayPal accepted. A retry after a partial failure sends only the rest.
+  const [sent, setSent] = useState<Set<string>>(new Set());
   if (!result) return <div className="sl-nudge-en">Writing each family&apos;s reminder in their own language…</div>;
   if (!data) return null;
   const nudges = data.result.nudges ?? [];
   if (nudges.length === 0) return <div className="sl-nudge-en">{data.result.note ?? "Nobody is past due."}</div>;
+
+  const waiting = nudges.filter((n) => !sent.has(n.invoiceId));
 
   async function send() {
     setState("sending");
@@ -60,13 +64,18 @@ function NudgeCards({ result }: AgAiToolDetailParams) {
       const res = await fetch("/api/reminders/send", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ reminders: nudges.map((n) => ({ invoiceId: n.invoiceId, subject: n.subject, message: n.message })) }),
+        body: JSON.stringify({ reminders: waiting.map((n) => ({ invoiceId: n.invoiceId, subject: n.subject, message: n.message })) }),
       });
-      const json = (await res.json().catch(() => ({}))) as { error?: string; results?: { ok: boolean; error?: string }[] };
+      const json = (await res.json().catch(() => ({}))) as { error?: string; results?: { invoiceId: string; ok: boolean; error?: string }[] };
       if (!res.ok) throw new Error(json.error ?? `Request failed (${res.status})`);
-      const failed = (json.results ?? []).filter((r) => !r.ok);
-      if (failed.length) throw new Error(failed[0].error ?? "PayPal did not accept a reminder");
-      setState("sent");
+      const results = json.results ?? [];
+      setSent((s) => new Set([...s, ...results.filter((r) => r.ok).map((r) => r.invoiceId)]));
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length) {
+        const who = nudges.find((n) => n.invoiceId === failed[0].invoiceId)?.family;
+        throw new Error(`${failed.length} not sent${who ? ` (${who}: ${failed[0].error ?? "PayPal did not accept it"})` : ""}.`);
+      }
+      setState("idle");
     } catch (e) {
       setError((e as Error).message);
       setState("error");
@@ -89,11 +98,14 @@ function NudgeCards({ result }: AgAiToolDetailParams) {
           {n.language !== "en" && <div className="sl-nudge-en">In English: {n.english}</div>}
         </div>
       ))}
-      {state === "sent" ? (
-        <div className="sl-nudge-sent">Sent as {nudges.length} PayPal invoice reminder{nudges.length === 1 ? "" : "s"}.</div>
-      ) : (
+      {sent.size > 0 && (
+        <div className="sl-nudge-sent">
+          Sent as {sent.size} PayPal invoice reminder{sent.size === 1 ? "" : "s"}.
+        </div>
+      )}
+      {waiting.length > 0 && (
         <button type="button" className="sl-nudge-send" disabled={state === "sending"} onClick={send}>
-          {state === "sending" ? "Sending…" : `Send ${nudges.length} as PayPal reminders`}
+          {state === "sending" ? "Sending…" : `${sent.size > 0 ? "Retry" : "Send"} ${waiting.length} as PayPal reminder${waiting.length === 1 ? "" : "s"}`}
         </button>
       )}
       {state === "error" && <div className="sl-nudge-en" style={{ color: "#f87171" }}>{error}</div>}

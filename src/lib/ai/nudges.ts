@@ -66,7 +66,7 @@ A first reminder is lighter; a second or third can be a little more direct but s
   const out = await structured<{ subject: string; message: string; english: string }>({ name: "nudge", system, user, schema, effort: "low", maxOutputTokens: 3000 });
   // The model sometimes writes a line break as the two characters "\n"; a parent should never see that.
   const lines = (s: string) => s.replace(/\\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
-  return { familyId: r.familyId, language: r.language, subject: lines(out.subject).slice(0, 120), message: lines(out.message).slice(0, 1200), english: lines(out.english).slice(0, 1200) };
+  return { familyId: r.familyId, language: r.language, subject: lines(out.subject).replace(/\s*\n\s*/g, " ").slice(0, 120), message: lines(out.message).slice(0, 1200), english: lines(out.english).slice(0, 1200) };
 }
 
 /** One model call per family, a few at a time, so one family's language never bleeds into another's. */

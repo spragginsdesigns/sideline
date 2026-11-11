@@ -57,7 +57,7 @@ export function defaultReport(aiOpen = true): AgReportState {
           how: {
             type: "donut-chart",
             format: { title: title("How families paid") },
-            dataMapping: { categoryKey: [{ id: "dues.paid_via" }], valueKey: [{ id: "dues.billed", aggregation: "sum" }] },
+            dataMapping: { categoryKey: [{ id: "dues.paid_via" }], valueKey: [{ id: "dues.collected", aggregation: "sum" }] },
           },
           dues: {
             type: "grid",
