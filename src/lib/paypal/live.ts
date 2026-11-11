@@ -286,10 +286,12 @@ export class LivePayPalGateway implements PayPalGateway {
   async generateQrCode(paypalInvoiceId: string): Promise<string | null> {
     const path = `/v2/invoicing/invoices/${encodeURIComponent(paypalInvoiceId)}/generate-qr-code`;
     try {
-      let res = await this.send("POST", path, { body: { width: 300, height: 300 } });
+      // The QR endpoint answers 406 to Accept: application/json; it returns the PNG as base64 text.
+      const qrHeaders = { Accept: "*/*" };
+      let res = await this.send("POST", path, { body: { width: 300, height: 300 }, headers: qrHeaders });
       if (res.status === 401) {
         this.token = null;
-        res = await this.send("POST", path, { body: { width: 300, height: 300 } });
+        res = await this.send("POST", path, { body: { width: 300, height: 300 }, headers: qrHeaders });
       }
       if (!res.ok) {
         const body = await readJson(res).catch(() => null);
