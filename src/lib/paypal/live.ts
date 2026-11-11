@@ -471,7 +471,9 @@ async function readJson(res: Response): Promise<Json | null> {
 
 function apiError(res: Response, method: string, path: string, body: Json | null): PayPalApiError {
   const issues: string[] = Array.isArray(body?.details)
-    ? body.details.map((d: Json) => d?.issue).filter((i: unknown): i is string => typeof i === "string")
+    ? body.details
+        .map((d: Json) => (typeof d?.issue === "string" ? (typeof d?.field === "string" ? `${d.issue} at ${d.field}` : d.issue) : null))
+        .filter((i: unknown): i is string => typeof i === "string")
     : [];
   return new PayPalApiError({
     status: res.status,

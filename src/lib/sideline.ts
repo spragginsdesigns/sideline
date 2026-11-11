@@ -10,6 +10,7 @@ import { formatCents } from "./money.ts";
 import { daysLate, isLate } from "./summary.ts";
 import { handlePayPalEvent } from "./webhooks.ts";
 import { publicBaseUrl } from "./config.ts";
+import { invoiceNumber } from "./invoiceNumber.ts";
 import type { Charge, Invoice } from "./types.ts";
 import type { DraftInvoiceInput } from "./paypal/gateway.ts";
 
@@ -239,7 +240,7 @@ export async function createCharge(rules: ChargeRules, sourceMessage: string, cl
         status: "DRAFT",
         paypalInvoiceId: null,
         // Deterministic per charge + family: PayPal rejects a duplicate invoice number.
-        paypalInvoiceNumber: `${state.team.shortName}-${slug(charge.title)}-${slug(fam.surname)}-${stamp}`,
+        paypalInvoiceNumber: invoiceNumber(state.team.shortName, charge.title, fam.surname, stamp),
         payerViewUrl: null,
         qrCodeDataUrl: null,
         createdAt: new Date().toISOString(),
