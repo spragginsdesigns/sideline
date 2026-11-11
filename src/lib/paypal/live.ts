@@ -258,7 +258,8 @@ export class LivePayPalGateway implements PayPalGateway {
 
     const body = await this.request("POST", "/v2/invoicing/invoices", {
       body: payload,
-      headers: { Prefer: "return=representation" },
+      // invoice_number is unique per merchant; reuse it as the request id so a retried create is not doubled.
+      headers: { Prefer: "return=representation", "PayPal-Request-Id": `sideline-inv-${input.invoiceNumber}` },
     });
 
     // return=representation gives the full invoice; return=minimal (or an older API) gives a self link.
@@ -316,6 +317,12 @@ export class LivePayPalGateway implements PayPalGateway {
     });
   }
 
+  async recordPayment(paypalInvoiceId: string, opts: { method: "CASH" | "CHECK"; amountCents: number; date: string; note: string }): Promise<void> {
+    await this.request("POST", `/v2/invoicing/invoices/${encodeURIComponent(paypalInvoiceId)}/payments`, {
+      body: { method: opts.method, payment_date: opts.date, note: opts.note, amount: { currency_code: "USD", value: centsToValue(opts.amountCents) } },
+    });
+  }
+
   async getInvoice(paypalInvoiceId: string): Promise<RemoteInvoice> {
     const inv = await this.request("GET", `/v2/invoicing/invoices/${encodeURIComponent(paypalInvoiceId)}`);
     return {
@@ -332,7 +339,10 @@ export class LivePayPalGateway implements PayPalGateway {
   // ----- payouts v1 -----
 
   async createPayout(input: PayoutInput): Promise<CreatedPayout> {
+    // sender_batch_id is PayPal's duplicate guard for payouts (a reused id is rejected);
+    // the request id makes a network retry of the same call safe as well.
     const body = await this.request("POST", "/v1/payments/payouts", {
+      headers: { "PayPal-Request-Id": `sideline-payout-${input.senderBatchId}` },
       body: {
         sender_batch_header: {
           sender_batch_id: input.senderBatchId,

@@ -8,7 +8,7 @@ export function CheckoutButtons({ paypalInvoiceId, returnTo, paid }: { paypalInv
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function pay(method: "PAYPAL" | "VENMO") {
+  async function pay(method: "PAYPAL" | "VENMO" | "CARD") {
     setBusy(method);
     setError(null);
     try {
@@ -35,6 +35,9 @@ export function CheckoutButtons({ paypalInvoiceId, returnTo, paid }: { paypalInv
       </button>
       <button onClick={() => pay("VENMO")} disabled={busy !== null} className="flex min-h-13 items-center justify-center gap-2 rounded-full bg-[#008cff] py-3.5 text-base font-bold text-white transition hover:bg-[#0077d9] disabled:opacity-60">
         {busy === "VENMO" && <Loader2 className="animate-spin" size={18} />} Pay with Venmo
+      </button>
+      <button onClick={() => pay("CARD")} disabled={busy !== null} className="flex min-h-13 items-center justify-center gap-2 rounded-full border border-slate-300 bg-white py-3.5 text-base font-bold text-[#1a1f36] transition hover:bg-slate-50 disabled:opacity-60">
+        {busy === "CARD" && <Loader2 className="animate-spin" size={18} />} Debit or credit card
       </button>
       {error && <p className="text-center text-sm text-red-600">{error}</p>}
     </div>

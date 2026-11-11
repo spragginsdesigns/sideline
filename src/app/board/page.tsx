@@ -18,6 +18,8 @@ export default function BoardPage() {
   const [chargeId, setChargeId] = useState<string | null>(null);
   const [nudgeFor, setNudgeFor] = useState<string[] | null>(null);
   const [demoBusy, setDemoBusy] = useState(false);
+  const [filter, setFilter] = useState<"all" | "late" | "unpaid" | "paid" | "covered">("all");
+  const [composing, setComposing] = useState(false);
 
   // Default to the newest charge. A charge just created may not be in the last poll yet, so
   // only fall back when nothing is selected (never fight a fresh selection).
@@ -74,7 +76,7 @@ export default function BoardPage() {
         <Scoreboard data={data} charge={charge} />
 
         <div className="grid grid-cols-1 gap-4 sm:gap-5 xl:grid-cols-[minmax(0,1fr)_400px]">
-          <div className="order-2 flex min-w-0 flex-col gap-4 sm:gap-5 xl:order-1">
+          <div className="order-1 flex min-w-0 flex-col gap-4 sm:gap-5">
             <Section
               title="The board"
               kicker={charge ? `${dueLabel(charge.dueDate)} · ${charge.stats.paid} of ${charge.stats.invoices} paid` : undefined}
@@ -85,9 +87,20 @@ export default function BoardPage() {
                       {demoBusy ? <Spinner /> : <PlayCircle size={16} />} Families pay
                     </button>
                   )}
-                  <button className="btn btn-primary" disabled={openHere.length === 0 || !data.ai} onClick={() => setNudgeFor((lateHere.length ? lateHere : openHere).map((i) => i.id))}>
-                    <BellRing size={16} /> Nudge {lateHere.length ? `${lateHere.length} late` : `${openHere.length} unpaid`}
-                  </button>
+                  {lateHere.length > 0 ? (
+                    <button
+                      className="btn btn-primary"
+                      disabled={!data.ai}
+                      onClick={() => {
+                        setFilter("late");
+                        setNudgeFor(lateHere.map((i) => i.id));
+                      }}
+                    >
+                      <BellRing size={16} /> Nudge {lateHere.length} late
+                    </button>
+                  ) : (
+                    openHere.length > 0 && <span className="self-center text-xs text-chalk-faint">Nobody is late yet · nudges unlock after the due date</span>
+                  )}
                 </div>
               }
             >
@@ -98,7 +111,10 @@ export default function BoardPage() {
                       key={c.id}
                       role="tab"
                       aria-selected={c.id === charge?.id}
-                      onClick={() => setChargeId(c.id)}
+                      onClick={() => {
+                        setChargeId(c.id);
+                        setFilter("all");
+                      }}
                       className={clsx(
                         "shrink-0 rounded-lg border px-3 py-2 text-left transition",
                         c.id === charge?.id ? "border-led/60 bg-led/10" : "border-chalk/10 hover:border-chalk/25",
@@ -112,25 +128,27 @@ export default function BoardPage() {
                   ))}
                 </div>
               )}
-              <FamilyBoard data={data} charge={charge} freshlyPaid={freshlyPaid} onNudge={onNudge} />
+              <FamilyBoard data={data} charge={charge} freshlyPaid={freshlyPaid} onNudge={onNudge} onError={onError} filter={filter} onFilter={setFilter} />
             </Section>
 
             <div className="grid grid-cols-1 gap-4 sm:gap-5 lg:grid-cols-2">
               <Section title="Games & refs" kicker="Refs are paid by PayPal Payouts when you mark a game final">
                 <Games data={data} onError={onError} />
               </Section>
-              <Section title="Live from PayPal" kicker="Every webhook and payout, as it lands" action={<span className="flex items-center gap-2 text-xs text-chalk-dim"><span className="dot-live" /> live</span>}>
-                <Activity events={data.events} />
+              <Section title="Activity" kicker="PayPal webhooks, payouts and the treasurer's entries" action={<span className="flex items-center gap-2 text-xs text-chalk-dim"><span className="dot-live" /> live</span>}>
+                <Activity events={data.events} simulated={data.mode === "simulator"} />
               </Section>
             </div>
           </div>
 
-          <div className="order-1 flex flex-col gap-4 sm:gap-5 xl:order-2">
+          <div className="order-2 flex flex-col gap-4 sm:gap-5" id="new-charge">
             <Section title="New charge" kicker="Group chat → PayPal invoices">
               <ChargeComposer
                 data={data}
+                onPreviewChange={setComposing}
                 onCreated={(id, sent) => {
                   setChargeId(id);
+                  setFilter("all");
                   pushToast({ tone: "led", title: `${sent} PayPal invoices sent`, body: "Each family got an email with their PayPal link and QR code." });
                   void refresh();
                 }}
@@ -157,7 +175,7 @@ export default function BoardPage() {
           }}
         />
       )}
-      <AskTreasurer enabled={data.ai} />
+      <AskTreasurer enabled={data.ai} hideOnMobile={composing} />
       <Toasts toasts={toasts} />
     </div>
   );

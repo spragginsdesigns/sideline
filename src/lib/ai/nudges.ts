@@ -24,62 +24,55 @@ export interface Nudge {
   english: string;
 }
 
-export async function draftNudges(reqs: NudgeRequest[], ctx: { team: string; treasurer: string; today: string }): Promise<Nudge[]> {
-  if (reqs.length === 0) return [];
+const STYLE: Partial<Record<LanguageCode, string>> = {
+  es: "Write like a friendly Mexican-American or Central American team mom texting another parent: warm and casual (\"mándame un mensajito y vemos cómo le hacemos\"), use \"cuota\" not \"cargo\", keep accents (Sofía, Lucía), never sound like a bank.",
+  vi: "Write like a friendly fellow parent, polite and warm (use \"anh/chị\" naturally), never like a bank notice.",
+  zh: "Write in simplified Chinese like a friendly fellow parent in a WeChat group, warm and polite, never like a bank notice.",
+  tl: "Write in natural Taglish-friendly Tagalog like a friendly fellow parent, warm and polite.",
+  hmn: "Write in White Hmong (Hmoob Dawb) like a friendly fellow parent, simple and warm.",
+  pa: "Write in Punjabi (Gurmukhi script) like a friendly fellow parent, warm and respectful.",
+  en: "Write like a friendly fellow parent texting, warm and casual.",
+};
+
+async function draftOne(r: NudgeRequest, ctx: { team: string; treasurer: string; today: string }): Promise<Nudge> {
+  const lang = `${LANGUAGE_NAMES[r.language]} (${r.language})`;
   const schema = {
     type: "object",
     additionalProperties: false,
-    properties: {
-      nudges: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            family_id: { type: "string", enum: reqs.map((r) => r.familyId) },
-            subject: { type: "string" },
-            message: { type: "string" },
-            english: { type: "string" },
-          },
-          required: ["family_id", "subject", "message", "english"],
-        },
-      },
-    },
-    required: ["nudges"],
+    properties: { subject: { type: "string" }, message: { type: "string" }, english: { type: "string" } },
+    required: ["subject", "message", "english"],
   };
-  const system = `You write payment reminders for a volunteer youth-sports treasurer, ${ctx.treasurer} of ${ctx.team}. Today is ${ctx.today}.
-Write one reminder per family, in the family's language (the "language" field). Each must:
-- greet the parent by first name and mention their player(s) by first name,
-- state the charge and the exact amount given (do not change the number),
+  const system = `You write one payment reminder for ${ctx.treasurer}, the volunteer treasurer of ${ctx.team}. Today is ${ctx.today}.
+Write the subject AND the message entirely in ${lang}. Translate the charge name into ${lang} too. ${STYLE[r.language] ?? ""}
+The message must:
+- greet the parent by first name and mention their player(s) by first name, spelled exactly as given,
+- state the charge and the amount exactly as given (write whole-dollar amounts without cents, e.g. "$30"; never change a number),
 - sound like a friendly teammate, never a collections notice: no guilt, no threats, no "final notice", no fees,
-- offer help if money is tight ("just message me and we'll work it out"),
-- say the PayPal link below has the details (the link is added automatically, do not write a URL),
+- offer help if money is tight,
+- say "the PayPal link in this message" (in ${lang}) has the details; never write a URL,
 - be 2 to 4 short sentences, plain text, signed "${ctx.treasurer.split(" ")[0]}".
 A first reminder is lighter; a second or third can be a little more direct but stays kind.
-"subject" is a short subject line in the same language. "english" is a faithful English translation of the message for the treasurer.`;
-  const user = JSON.stringify(
-    reqs.map((r) => ({
-      family_id: r.familyId,
-      language: `${r.language} (${LANGUAGE_NAMES[r.language]})`,
-      parent_first_name: r.guardianFirstName,
-      players: r.playerNames,
-      charge: r.chargeTitle,
-      amount: r.amount,
-      due_date: r.dueDate,
-      days_late: r.daysLate,
-      reminders_already_sent: r.remindersSoFar,
-    })),
-  );
-  const out = await structured<{ nudges: { family_id: string; subject: string; message: string; english: string }[] }>({
-    name: "nudges",
-    system,
-    user,
-    schema,
-    effort: "low",
-    maxOutputTokens: 9000,
+"english" is a faithful English translation of the message, for the treasurer to check.`;
+  const amount = r.amount.endsWith(".00") ? r.amount.slice(0, -3) : r.amount;
+  const user = JSON.stringify({
+    parent_first_name: r.guardianFirstName,
+    players: r.playerNames,
+    charge: r.chargeTitle,
+    amount,
+    due_date: r.dueDate,
+    days_late: r.daysLate,
+    reminders_already_sent: r.remindersSoFar,
   });
-  const byId = new Map(reqs.map((r) => [r.familyId, r]));
-  return out.nudges
-    .filter((n) => byId.has(n.family_id))
-    .map((n) => ({ familyId: n.family_id, language: byId.get(n.family_id)!.language, subject: n.subject.slice(0, 120), message: n.message.slice(0, 1200), english: n.english.slice(0, 1200) }));
+  const out = await structured<{ subject: string; message: string; english: string }>({ name: "nudge", system, user, schema, effort: "low", maxOutputTokens: 3000 });
+  return { familyId: r.familyId, language: r.language, subject: out.subject.slice(0, 120), message: out.message.slice(0, 1200), english: out.english.slice(0, 1200) };
+}
+
+/** One model call per family, a few at a time, so one family's language never bleeds into another's. */
+export async function draftNudges(reqs: NudgeRequest[], ctx: { team: string; treasurer: string; today: string }): Promise<Nudge[]> {
+  const out: Nudge[] = [];
+  const LIMIT = 5;
+  for (let i = 0; i < reqs.length; i += LIMIT) {
+    out.push(...(await Promise.all(reqs.slice(i, i + LIMIT).map((r) => draftOne(r, ctx)))));
+  }
+  return out;
 }

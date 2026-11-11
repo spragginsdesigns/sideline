@@ -86,12 +86,12 @@ function GameRow({ game, data, isToday, onError }: { game: Game; data: Dashboard
           <label className="sr-only" htmlFor={`us-${game.id}`}>
             {data.team.shortName} score
           </label>
-          <input id={`us-${game.id}`} className="field !w-16 !py-2 text-center led" inputMode="numeric" placeholder="Us" value={us} onChange={(e) => setUs(e.target.value.replace(/\D/g, "").slice(0, 2))} />
+          <input id={`us-${game.id}`} className="field !w-[4.75rem] !px-2 !py-2 text-center led" inputMode="numeric" placeholder="Us" value={us} onChange={(e) => setUs(e.target.value.replace(/\D/g, "").slice(0, 2))} />
           <span className="text-chalk-faint">–</span>
           <label className="sr-only" htmlFor={`them-${game.id}`}>
             {game.opponent} score
           </label>
-          <input id={`them-${game.id}`} className="field !w-16 !py-2 text-center led" inputMode="numeric" placeholder="Them" value={them} onChange={(e) => setThem(e.target.value.replace(/\D/g, "").slice(0, 2))} />
+          <input id={`them-${game.id}`} className="field !w-[4.75rem] !px-2 !py-2 text-center led" inputMode="numeric" placeholder="Them" value={them} onChange={(e) => setThem(e.target.value.replace(/\D/g, "").slice(0, 2))} />
           <button className="btn btn-primary flex-1" disabled={busy || us === "" || them === ""} onClick={finalize}>
             {busy ? <Spinner /> : <Whistle size={16} />} Final · pay ref
           </button>

@@ -57,14 +57,15 @@ function apply(state: AppState, event: IncomingEvent, source: EventSource): Hand
       const tx = Array.isArray(payments.transactions) ? obj(payments.transactions[0]) : {};
       inv.status = "PAID";
       inv.paidAt = new Date().toISOString();
-      inv.paidVia = str(tx.method) === "VENMO" ? "Venmo" : "PayPal";
+      const method = str(tx.method);
+      inv.paidVia = method === "VENMO" ? "Venmo" : method === "CARD" ? "Card" : method === "CASH" ? "Cash" : method === "CHECK" ? "Check" : "PayPal";
       const fam = state.team.families.find((f) => f.id === inv.payerFamilyId);
       const charge = state.charges.find((c) => c.id === inv.chargeId);
       state.events.push({
         id: newId("e"),
         at: inv.paidAt,
         type: "invoice.paid",
-        summary: `${fam?.surname ?? "A"} family paid ${charge?.title ?? "an invoice"}`,
+        summary: `${fam?.surname ?? "A"} family paid ${charge?.title ?? "an invoice"}${inv.paidVia === "Cash" || inv.paidVia === "Check" ? ` (${inv.paidVia.toLowerCase()}, recorded in PayPal)` : ""}`,
         amountCents: paid,
         source: evSource,
         ref: inv.id,

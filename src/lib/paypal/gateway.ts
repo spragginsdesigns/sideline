@@ -5,7 +5,7 @@
 //                  emits PayPal-shaped webhook events, so the app runs with no keys.
 
 export interface DraftInvoiceInput {
-  invoiceNumber: string; // unique per merchant, e.g. "HAWKS-FRESNO-GARCIA"
+  invoiceNumber: string; // unique per merchant, e.g. "HAWKS-FRESNO-GARCIA"; also the idempotency key
   currency: "USD";
   note: string;
   memo?: string;
@@ -68,6 +68,8 @@ export interface PayPalGateway {
   generateQrCode(paypalInvoiceId: string): Promise<string | null>; // data URL (image/png) or null
   sendReminder(paypalInvoiceId: string, opts: { subject: string; note: string }): Promise<void>;
   cancelInvoice(paypalInvoiceId: string, opts: { subject: string; note: string }): Promise<void>;
+  /** Record a payment made outside PayPal (cash, check) against the invoice. */
+  recordPayment(paypalInvoiceId: string, opts: { method: "CASH" | "CHECK"; amountCents: number; date: string; note: string }): Promise<void>;
   getInvoice(paypalInvoiceId: string): Promise<RemoteInvoice>;
   createPayout(input: PayoutInput): Promise<CreatedPayout>;
   listTransactions(range: { startDate: string; endDate: string }): Promise<RemoteTransaction[]>;

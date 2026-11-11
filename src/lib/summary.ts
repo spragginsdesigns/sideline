@@ -24,6 +24,7 @@ export interface ChargeStats {
   collectedCents: number;
   outstandingCents: number;
   absorbedCents: number;
+  prepaidCents: number;
   invoices: number;
   paid: number;
   late: number;
@@ -32,12 +33,14 @@ export interface ChargeStats {
 export function chargeStats(state: AppState, charge: Charge, now = Date.now()): ChargeStats {
   const invs = state.invoices.filter((i) => i.chargeId === charge.id && i.status !== "CANCELLED");
   const paid = invs.filter((i) => i.status === "PAID");
+  const prepaidCents = (charge.prepaid ?? []).reduce((a, p) => a + p.amountCents, 0);
   return {
     chargeId: charge.id,
     title: charge.title,
     dueDate: charge.dueDate,
-    billedCents: invs.reduce((a, i) => a + i.amountCents, 0),
-    collectedCents: paid.reduce((a, i) => a + i.amountCents, 0),
+    billedCents: invs.reduce((a, i) => a + i.amountCents, 0) + prepaidCents,
+    collectedCents: paid.reduce((a, i) => a + i.amountCents, 0) + prepaidCents,
+    prepaidCents,
     outstandingCents: invs.filter((i) => i.status === "SENT").reduce((a, i) => a + i.amountCents, 0),
     absorbedCents: charge.absorbedCents,
     invoices: invs.length,

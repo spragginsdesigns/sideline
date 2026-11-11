@@ -9,12 +9,14 @@ export function PayButton({
   mode,
   invoiceNumber,
   qr,
+  labels,
 }: {
   status: string;
   href: string | null;
   mode: "live" | "simulator";
   invoiceNumber: string | null;
   qr: string | null;
+  labels: { payWith: string; thanks: string; seen: string; showQr: string; hideQr: string };
 }) {
   const router = useRouter();
   const [showQr, setShowQr] = useState(false);
@@ -30,8 +32,8 @@ export function PayButton({
     return (
       <div className="rise flex flex-col items-center gap-2 rounded-xl border border-turf/40 bg-turf/10 px-4 py-5 text-center">
         <CheckCircle2 className="text-turf-bright" size={36} />
-        <div className="font-display text-xl font-semibold uppercase tracking-wide text-turf-bright">Paid. Thank you!</div>
-        <div className="text-sm text-chalk-dim">Your treasurer has already seen it on the team board.</div>
+        <div className="font-display text-xl font-semibold uppercase tracking-wide text-turf-bright">{labels.thanks}</div>
+        <div className="text-sm text-chalk-dim">{labels.seen}</div>
       </div>
     );
   }
@@ -40,7 +42,7 @@ export function PayButton({
   return (
     <div className="mt-4 flex flex-col gap-3">
       <a href={href} className="btn !min-h-14 w-full !rounded-full !bg-[#ffc439] !text-base !normal-case !tracking-normal !text-[#111] hover:!bg-[#f2ba36]" rel="noreferrer">
-        Pay with <span className="font-sans text-lg font-extrabold italic"><span className="text-[#003087]">Pay</span><span className="text-[#009cde]">Pal</span></span>
+        {labels.payWith} <span className="font-sans text-lg font-extrabold italic"><span className="text-[#003087]">Pay</span><span className="text-[#009cde]">Pal</span></span>
       </a>
       <div className="flex items-center justify-between text-xs text-chalk-faint">
         <span>
@@ -49,7 +51,7 @@ export function PayButton({
         </span>
         {qr && (
           <button className="flex items-center gap-1 text-sky hover:underline" onClick={() => setShowQr((s) => !s)}>
-            <QrCode size={14} /> {showQr ? "Hide" : "Show"} QR code
+            <QrCode size={14} /> {showQr ? labels.hideQr : labels.showQr}
           </button>
         )}
       </div>

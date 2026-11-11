@@ -4,6 +4,7 @@ import { AgCharts } from "ag-charts-react";
 import { AllCommunityModule, ModuleRegistry, type AgChartOptions } from "ag-charts-community";
 import type { DashboardView } from "@/lib/view";
 import { money } from "./ui";
+import { cssFont } from "@/lib/cssFont";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -80,7 +81,7 @@ function Donut({ collected, outstanding, absorbed }: { collected: number; outsta
           tooltip: {
             renderer: ({ datum }: { datum: { what: string; cents: number } }) => ({ heading: datum.what, data: [{ label: "Amount", value: money(datum.cents) }] }),
           },
-          innerLabels: [{ text: total(collected, outstanding) + "%", fontSize: 22, fontFamily: "JetBrains Mono, monospace", fontWeight: "bold", color: "#e2e8f0" }],
+          innerLabels: [{ text: total(collected, outstanding) + "%", fontSize: 22, fontFamily: cssFont("--font-jetbrains", "monospace"), fontWeight: "bold", color: "#e2e8f0" }],
         },
       ],
     } as AgChartOptions;

@@ -1,0 +1,156 @@
+// Parent pay-page strings in each family's language. Generated with the model,
+// then reviewed; placeholders in {braces} are filled in by t().
+import type { LanguageCode } from "./types";
+
+export const PAY_STRINGS = {
+  "en": {
+    "hi": "Hi {name}!",
+    "share": "Here's the {family} family's share for {charge}.",
+    "total": "Total",
+    "due": "Due {date}",
+    "wasDue": "Was due {date}",
+    "anytime": "Whenever you can",
+    "paidOn": "Paid {date} via {method}",
+    "payWith": "Pay with",
+    "thanks": "Paid. Thank you!",
+    "seen": "The team board already shows it.",
+    "moneyTo": "Your payment goes to {team} through PayPal, managed by {treasurer}, the team treasurer.",
+    "methods": "Pay with your PayPal balance, Venmo, or a debit or credit card.",
+    "messageFrom": "Message from {name}",
+    "showQr": "Show QR code",
+    "hideQr": "Hide QR code",
+    "report": "See where the team's money goes",
+    "covering": "Covering the {family} family",
+    "yourShare": "{family} family share"
+  },
+  "es": {
+    "hi": "¡Hola {name}!",
+    "share": "Esta es la parte de la familia {family} para {charge}.",
+    "total": "Total",
+    "due": "Vence el {date}",
+    "wasDue": "Vencía el {date}",
+    "anytime": "Cuando puedas",
+    "paidOn": "Pagado el {date} con {method}",
+    "payWith": "Paga con",
+    "thanks": "¡Pagado! ¡Gracias!",
+    "seen": "El equipo ya lo ve en su tablero.",
+    "moneyTo": "Tu pago llega a {team} por PayPal. Lo administra {treasurer}, quien lleva las cuentas del equipo.",
+    "methods": "Paga con tu saldo de PayPal, Venmo o una tarjeta de débito o crédito.",
+    "messageFrom": "Mensaje de {name}",
+    "showQr": "Mostrar código QR",
+    "hideQr": "Ocultar código QR",
+    "report": "Mira en qué se gasta el dinero del equipo",
+    "covering": "Cubriendo a la familia {family}",
+    "yourShare": "Parte de la familia {family}"
+  },
+  "vi": {
+    "hi": "Chào {name}!",
+    "share": "Đây là phần đóng góp của gia đình {family} cho {charge}.",
+    "total": "Tổng cộng",
+    "due": "Hạn thanh toán {date}",
+    "wasDue": "Đã quá hạn {date}",
+    "anytime": "Khi nào bạn có thể",
+    "paidOn": "Đã thanh toán ngày {date} qua {method}",
+    "payWith": "Thanh toán bằng",
+    "thanks": "Đã thanh toán. Cảm ơn bạn!",
+    "seen": "Thủ quỹ của đội đã thấy khoản này trên bảng của đội.",
+    "moneyTo": "Khoản thanh toán của bạn sẽ chuyển đến {team} qua PayPal, do {treasurer}, thủ quỹ của đội, quản lý.",
+    "methods": "Thanh toán bằng số dư PayPal, Venmo hoặc thẻ ghi nợ/thẻ tín dụng.",
+    "messageFrom": "Tin nhắn từ {name}",
+    "showQr": "Hiện mã QR",
+    "hideQr": "Ẩn mã QR",
+    "report": "Xem tiền của đội được sử dụng vào đâu",
+    "covering": "Đóng góp cho gia đình {family}",
+    "yourShare": "Phần đóng góp của gia đình {family}"
+  },
+  "hmn": {
+    "hi": "Nyob zoo {name}!",
+    "share": "Nov yog tsev neeg {family} feem rau {charge}.",
+    "total": "Tag nrho",
+    "due": "Them tsis pub dhau {date}",
+    "wasDue": "Twb dhau hnub them {date}",
+    "anytime": "Thaum twg los tau",
+    "paidOn": "Them lawm hnub {date} ntawm {method}",
+    "payWith": "Them siv",
+    "thanks": "Them lawm. Ua tsaug!",
+    "seen": "Tus tuav nyiaj ntawm koj pab neeg twb pom lawm hauv daim ntawv teev nyiaj ntawm pab neeg.",
+    "moneyTo": "Koj cov nyiaj them mus rau {team} los ntawm PayPal, uas {treasurer}, tus tuav nyiaj ntawm pab neeg, yog tus tswj.",
+    "methods": "Them siv koj cov nyiaj hauv PayPal, Venmo, lossis daim debit lossis credit card.",
+    "messageFrom": "Xov xwm ntawm {name}",
+    "showQr": "Qhia QR code",
+    "hideQr": "Nkaum QR code",
+    "report": "Saib seb cov nyiaj pab neeg siv mus qhov twg",
+    "covering": "Them rau tsev neeg {family}",
+    "yourShare": "Tsev neeg {family} feem"
+  },
+  "pa": {
+    "hi": "ਸਤ ਸ੍ਰੀ ਅਕਾਲ {name}!",
+    "share": "ਇਹ {charge} ਲਈ {family} ਪਰਿਵਾਰ ਦਾ ਹਿੱਸਾ ਹੈ।",
+    "total": "ਕੁੱਲ",
+    "due": "ਆਖਰੀ ਮਿਤੀ {date}",
+    "wasDue": "ਮਿਆਦ {date} ਨੂੰ ਸੀ",
+    "anytime": "ਜਦੋਂ ਵੀ ਹੋ ਸਕੇ",
+    "paidOn": "{date} ਨੂੰ {method} ਰਾਹੀਂ ਭੁਗਤਾਨ ਕੀਤਾ",
+    "payWith": "ਇਸ ਨਾਲ ਭੁਗਤਾਨ ਕਰੋ",
+    "thanks": "ਭੁਗਤਾਨ ਹੋ ਗਿਆ। ਧੰਨਵਾਦ!",
+    "seen": "ਤੁਹਾਡੀ ਟੀਮ ਦੇ ਖ਼ਜ਼ਾਨਚੀ ਨੂੰ ਇਹ ਟੀਮ ਬੋਰਡ 'ਤੇ ਪਹਿਲਾਂ ਹੀ ਦਿਖ ਰਿਹਾ ਹੈ।",
+    "moneyTo": "ਤੁਹਾਡਾ ਭੁਗਤਾਨ PayPal ਰਾਹੀਂ {team} ਨੂੰ ਜਾਂਦਾ ਹੈ ਅਤੇ ਟੀਮ ਦੇ ਖ਼ਜ਼ਾਨਚੀ {treasurer} ਵੱਲੋਂ ਸੰਭਾਲਿਆ ਜਾਂਦਾ ਹੈ।",
+    "methods": "ਆਪਣੇ PayPal ਬੈਲੰਸ, Venmo ਜਾਂ ਡੈਬਿਟ/ਕ੍ਰੈਡਿਟ ਕਾਰਡ ਨਾਲ ਭੁਗਤਾਨ ਕਰੋ।",
+    "messageFrom": "{name} ਵੱਲੋਂ ਸੁਨੇਹਾ",
+    "showQr": "QR ਕੋਡ ਦਿਖਾਓ",
+    "hideQr": "QR ਕੋਡ ਲੁਕਾਓ",
+    "report": "ਦੇਖੋ ਕਿ ਟੀਮ ਦਾ ਪੈਸਾ ਕਿੱਥੇ ਜਾਂਦਾ ਹੈ",
+    "covering": "{family} ਪਰਿਵਾਰ ਲਈ ਭੁਗਤਾਨ",
+    "yourShare": "{family} ਪਰਿਵਾਰ ਦਾ ਹਿੱਸਾ"
+  },
+  "tl": {
+    "hi": "Kumusta {name}!",
+    "share": "Ito ang bahagi ng pamilya {family} para sa {charge}.",
+    "total": "Kabuuan",
+    "due": "Due sa {date}",
+    "wasDue": "Dapat bayaran noong {date}",
+    "anytime": "Kahit kailan",
+    "paidOn": "Bayad noong {date} gamit ang {method}",
+    "payWith": "Magbayad gamit ang",
+    "thanks": "Bayad na. Salamat!",
+    "seen": "Nakikita na ito ng ingat-yaman ng team sa team board.",
+    "moneyTo": "Ang bayad mo ay mapupunta sa {team} sa pamamagitan ng PayPal, na pinamamahalaan ni {treasurer}, ang ingat-yaman ng team.",
+    "methods": "Magbayad gamit ang iyong PayPal balance, Venmo, o debit o credit card.",
+    "messageFrom": "Mensahe mula kay {name}",
+    "showQr": "Ipakita ang QR code",
+    "hideQr": "Itago ang QR code",
+    "report": "Tingnan kung saan napupunta ang pera ng team",
+    "covering": "Para sa pamilya {family}",
+    "yourShare": "Bahagi ng pamilya {family}"
+  },
+  "zh": {
+    "hi": "嗨，{name}！",
+    "share": "这是{family}家庭为{charge}分摊的金额。",
+    "total": "总计",
+    "due": "截止日期：{date}",
+    "wasDue": "原定截止日期：{date}",
+    "anytime": "方便时再付",
+    "paidOn": "已于{date}通过{method}支付",
+    "payWith": "支付方式",
+    "thanks": "已支付，谢谢！",
+    "seen": "球队财务负责人已经在球队看板上看到了。",
+    "moneyTo": "你的付款会通过 PayPal 支付给{team}，由球队财务负责人{treasurer}管理。",
+    "methods": "可使用 PayPal 余额、Venmo 或借记卡/信用卡支付。",
+    "messageFrom": "来自{name}的消息",
+    "showQr": "显示二维码",
+    "hideQr": "隐藏二维码",
+    "report": "查看球队资金去向",
+    "covering": "为{family}家庭支付",
+    "yourShare": "{family}家庭分摊"
+  }
+} as const;
+
+export type PayKey = keyof (typeof PAY_STRINGS)["en"];
+
+export function t(lang: LanguageCode, key: PayKey, vars: Record<string, string> = {}): string {
+  const table = (PAY_STRINGS as Record<string, Record<string, string>>)[lang] ?? PAY_STRINGS.en;
+  const raw = table[key] ?? PAY_STRINGS.en[key];
+  return raw.replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? "");
+}
+
+export const DATE_LOCALE: Record<LanguageCode, string> = { en: "en-US", es: "es-US", vi: "vi-VN", hmn: "en-US", pa: "pa-IN", tl: "fil-PH", zh: "zh-CN" };

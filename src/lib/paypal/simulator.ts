@@ -70,7 +70,7 @@ export class SimulatedPayPalGateway implements PayPalGateway {
    * the simulator's memory is lost on restart and must follow a demo reset.
    */
   adopt(paypalInvoiceId: string, input: DraftInvoiceInput, status: string, payerViewUrl: string | null) {
-    const paidCents = status === "PAID" ? input.items.reduce((a, i) => a + i.amountCents, 0) : 0;
+    const paidCents = status === "PAID" || status === "MARKED_AS_PAID" ? input.items.reduce((a, i) => a + i.amountCents, 0) : 0;
     this.invoices.set(paypalInvoiceId, { id: paypalInvoiceId, input, status, paidCents, payerViewUrl });
   }
 
@@ -112,6 +112,22 @@ export class SimulatedPayPalGateway implements PayPalGateway {
     const inv = this.get(id);
     inv.status = "CANCELLED";
     await this.emit(this.event("INVOICING.INVOICE.CANCELLED", "invoices", `An invoice was cancelled`, this.invoiceResource(inv)));
+  }
+
+  async recordPayment(id: string, opts: { method: "CASH" | "CHECK"; amountCents: number; date: string; note: string }): Promise<void> {
+    const inv = this.get(id);
+    if (inv.status !== "SENT") throw new Error(`UNPROCESSABLE_ENTITY: cannot record a payment on an invoice in ${inv.status}`);
+    inv.status = "MARKED_AS_PAID";
+    inv.paidCents = opts.amountCents;
+    await this.emit(
+      this.event("INVOICING.INVOICE.PAID", "invoices", "An invoice was marked as paid", {
+        ...this.invoiceResource(inv),
+        payments: {
+          paid_amount: { currency_code: "USD", value: centsToDecimal(opts.amountCents) },
+          transactions: [{ payment_id: `SIMEXT${block(10)}`, method: opts.method, type: "EXTERNAL", payment_date: opts.date, amount: { currency_code: "USD", value: centsToDecimal(opts.amountCents) } }],
+        },
+      }),
+    );
   }
 
   async getInvoice(id: string): Promise<RemoteInvoice> {

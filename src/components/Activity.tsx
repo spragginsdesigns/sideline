@@ -1,5 +1,5 @@
 "use client";
-import { ArrowDownLeft, ArrowUpRight, BellRing, FileText, Flag, Whistle } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Banknote, BellRing, FileText, Flag, Whistle } from "lucide-react";
 import type { DashboardView } from "@/lib/view";
 import { money, timeAgo } from "./ui";
 
@@ -14,9 +14,10 @@ const ICON: Record<string, { Icon: React.ComponentType<{ size?: number }>; tone:
   "charge.created": { Icon: FileText, tone: "text-chalk bg-chalk/8" },
   expense: { Icon: ArrowUpRight, tone: "text-coral-soft bg-coral/12" },
   "opening.balance": { Icon: ArrowDownLeft, tone: "text-chalk-dim bg-chalk/8" },
+  "payment.offline": { Icon: Banknote, tone: "text-turf-bright bg-turf/12" },
 };
 
-export function Activity({ events, limit = 14 }: { events: Ev[]; limit?: number }) {
+export function Activity({ events, limit = 14, simulated = false }: { events: Ev[]; limit?: number; simulated?: boolean }) {
   return (
     <ol className="flex flex-col">
       {events.slice(0, limit).map((e) => {
@@ -31,8 +32,14 @@ export function Activity({ events, limit = 14 }: { events: Ev[]; limit?: number 
               <div className="text-sm leading-snug text-chalk">{e.summary}</div>
               <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-chalk-faint">
                 <span>{timeAgo(e.at)}</span>
-                {fromPayPal && <span className="text-sky">· PayPal {e.source === "paypal-sync" ? "sync" : "webhook"}</span>}
+                {fromPayPal && (
+                  <span className="text-sky">
+                    · PayPal {e.source === "paypal-sync" ? "sync" : "webhook"}
+                    {simulated && " (simulated)"}
+                  </span>
+                )}
                 {e.source === "agent" && <span className="text-led">· AI nudge</span>}
+                {e.source === "treasurer" && <span>· treasurer</span>}
               </div>
             </div>
             {e.amountCents !== 0 && (

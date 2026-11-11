@@ -1,7 +1,7 @@
 // Deterministic money engine. The AI only *reads* the coach's message into
-// ChargeRules; every dollar is computed here, in integer cents, so the totals
-// always add up and the result is the same every time.
-import type { Charge, ChargeLine, Family, InvoiceItem } from "../types.ts";
+// ChargeRules (who, what kind of rule, which fraction); every dollar is computed
+// here, in integer cents, so the result is exact, explainable and repeatable.
+import type { Charge, ChargeLine, Family, InvoiceItem, PrepaidMethod } from "../types.ts";
 
 export interface ChargeRules {
   title: string;
@@ -11,17 +11,27 @@ export interface ChargeRules {
   dueDate: string | null;
   scholarshipFamilyIds: string[];
   scholarshipPolicy: "team_absorbs" | "split_among_others";
-  coverings: { payerFamilyId: string; coveredFamilyId: string }[];
-  customAmounts: { familyId: string; amountCents: number; reason: string }[];
-  excludedFamilyIds: string[];
+  /** payer covers `fraction` (0..1] of covered's share. */
+  coverings: { payerFamilyId: string; coveredFamilyId: string; fraction: number }[];
+  /** A family pays a fraction of its share ("half") or a fixed amount; the team fund covers any difference. */
+  adjustments: { familyId: string; fraction: number | null; amountCents: number | null; reason: string }[];
+  /** Money already handed over outside PayPal (cash, Venmo, Zelle...). amountCents null = the whole share. */
+  prepaid: { familyId: string; amountCents: number | null; fraction?: number | null; method: PrepaidMethod }[];
+  excludedFamilyIds: string[]; // not taking part at all (injured, not going)
   notes: string[]; // human-readable rules the AI applied
   ambiguities: string[]; // things the treasurer should double-check
 }
 
 export interface Allocation {
   lines: ChargeLine[];
-  totalCents: number; // everything owed, including absorbed scholarship shares
-  absorbedCents: number;
+  shareCents: Record<string, number>; // each participating family's share before covers/prepaid
+  totalCents: number; // sum of every share (stated total plus rounding)
+  absorbedCents: number; // the team fund covers this (scholarships, discounts)
+  prepaid: { familyId: string; amountCents: number; method: PrepaidMethod }[];
+  prepaidCents: number;
+  invoicedCents: number;
+  roundingCents: number; // pennies added by rounding the per-player share up to a whole cent
+  perUnitCents: number | null;
   warnings: string[];
 }
 
@@ -36,10 +46,7 @@ export function splitExact(totalCents: number, weights: number[]): number[] {
   const raw = weights.map((w) => (totalCents * w) / sumW);
   const floors = raw.map(Math.floor);
   let leftover = totalCents - floors.reduce((a, b) => a + b, 0);
-  // Largest remainder first; ties break on original order for stability.
-  const order = raw
-    .map((r, i) => ({ i, frac: r - Math.floor(r) }))
-    .sort((a, b) => b.frac - a.frac || a.i - b.i);
+  const order = raw.map((r, i) => ({ i, frac: r - Math.floor(r) })).sort((a, b) => b.frac - a.frac || a.i - b.i);
   for (const { i } of order) {
     if (leftover <= 0) break;
     floors[i] += 1;
@@ -48,92 +55,101 @@ export function splitExact(totalCents: number, weights: number[]): number[] {
   return floors;
 }
 
+const clampFraction = (f: number) => (Number.isFinite(f) ? Math.min(1, Math.max(0, f)) : 1);
+
 export function allocate(rules: ChargeRules, families: Family[]): Allocation {
   const warnings: string[] = [];
   const byId = new Map(families.map((f) => [f.id, f]));
-  const known = (id: string, what: string) => {
-    if (byId.has(id)) return true;
-    warnings.push(`Ignored ${what} for an unknown family (${id}).`);
-    return false;
-  };
+  const name = (id: string) => byId.get(id)?.surname ?? id;
+  const known = (id: string) => byId.has(id);
 
-  // A scholarship family is on the charge (the team pays for them), so a scholarship
-  // always wins over an exclusion of the same family.
-  const scholarship = new Set(rules.scholarshipFamilyIds.filter((id) => known(id, "a scholarship")));
-  const excluded = new Set(rules.excludedFamilyIds.filter((id) => known(id, "an exclusion") && !scholarship.has(id)));
-  const custom = new Map<string, { amountCents: number; reason: string }>();
-  for (const c of rules.customAmounts) {
-    if (!known(c.familyId, "a custom amount") || excluded.has(c.familyId)) continue;
-    if (c.amountCents < 0) {
-      warnings.push(`Ignored a negative amount for ${byId.get(c.familyId)!.surname}.`);
-      continue;
-    }
-    if (scholarship.has(c.familyId)) {
-      warnings.push(
-        `${byId.get(c.familyId)!.surname} has both a scholarship and a custom amount; kept the custom amount.`,
-      );
-      scholarship.delete(c.familyId);
-    }
-    custom.set(c.familyId, c);
-  }
-
+  // A scholarship family is on the charge (the team pays for them), so it wins over an exclusion.
+  const scholarship = new Set(rules.scholarshipFamilyIds.filter(known));
+  const excluded = new Set(rules.excludedFamilyIds.filter((id) => known(id) && !scholarship.has(id)));
   const participants = families.filter((f) => !excluded.has(f.id));
-  const shares = new Map<string, number>();
-  let absorbed = 0;
 
+  // 1. Each participating family's share.
+  const share = new Map<string, number>();
+  let perUnit: number | null = null;
+  let rounding = 0;
   if (rules.amountKind === "team_total") {
-    const basis = rules.splitBasis;
-    const customSum = [...custom.values()].reduce((a, c) => a + c.amountCents, 0);
-    let remaining = rules.amountCents - customSum;
-    if (remaining < 0) {
-      warnings.push("The custom amounts add up to more than the team total; nobody else owes anything.");
-      remaining = 0;
+    const payingUnits = participants
+      .filter((f) => !(rules.scholarshipPolicy === "split_among_others" && scholarship.has(f.id)))
+      .reduce((a, f) => a + units(f, rules.splitBasis), 0);
+    if (payingUnits > 0) {
+      // Everyone pays the same per-player (or per-family) amount, rounded UP to a whole cent;
+      // the few cents of rounding go to the team fund, so no parent pays a penny more than another.
+      perUnit = Math.ceil(rules.amountCents / payingUnits);
+      rounding = perUnit * payingUnits - rules.amountCents;
+    } else if (rules.amountCents > 0) {
+      warnings.push("No family is left to pay this charge.");
     }
-    const open = participants.filter((f) => !custom.has(f.id));
-    const payers = rules.scholarshipPolicy === "split_among_others" ? open.filter((f) => !scholarship.has(f.id)) : open;
-    const parts = splitExact(
-      remaining,
-      payers.map((f) => units(f, basis)),
-    );
-    payers.forEach((f, i) => shares.set(f.id, parts[i]));
-    for (const f of open) if (!shares.has(f.id)) shares.set(f.id, 0);
-    if (rules.scholarshipPolicy === "team_absorbs") {
-      for (const id of scholarship) {
-        absorbed += shares.get(id) ?? 0;
-      }
-    }
-    if (payers.length === 0 && remaining > 0) warnings.push("No family is left to pay this charge.");
-  } else {
     for (const f of participants) {
-      if (custom.has(f.id)) continue;
-      const each = rules.amountKind === "per_player" ? rules.amountCents * units(f, "player") : rules.amountCents;
-      shares.set(f.id, each);
-      if (scholarship.has(f.id)) absorbed += each;
+      const zero = rules.scholarshipPolicy === "split_among_others" && scholarship.has(f.id);
+      share.set(f.id, zero ? 0 : (perUnit ?? 0) * units(f, rules.splitBasis));
     }
+  } else {
+    perUnit = rules.amountCents;
+    for (const f of participants) share.set(f.id, rules.amountKind === "per_player" ? rules.amountCents * units(f, "player") : rules.amountCents);
   }
-  for (const [id, c] of custom) shares.set(id, c.amountCents);
 
-  // Who pays for whom. A family can be covered once; chains (A covers B, B covers C) resolve to A.
-  const payerOf = new Map<string, string>();
-  for (const c of rules.coverings) {
-    if (!known(c.payerFamilyId, "a covering") || !known(c.coveredFamilyId, "a covering")) continue;
-    if (c.payerFamilyId === c.coveredFamilyId) continue;
-    if (excluded.has(c.payerFamilyId)) {
-      warnings.push(`${byId.get(c.payerFamilyId)!.surname} is not on this charge, so they cannot cover anyone.`);
+  // 2. What each family itself owes after scholarships and adjustments; the team fund absorbs the rest.
+  const owes = new Map<string, number>();
+  const ownNote = new Map<string, string>();
+  let absorbed = 0;
+  const adjusted = new Map<string, ChargeRules["adjustments"][number]>();
+  for (const a of rules.adjustments) {
+    if (!known(a.familyId) || excluded.has(a.familyId)) continue;
+    if (scholarship.has(a.familyId)) {
+      warnings.push(`The ${name(a.familyId)} family is on scholarship, so their discount was ignored.`);
       continue;
     }
-    if (payerOf.has(c.coveredFamilyId)) {
-      warnings.push(`${byId.get(c.coveredFamilyId)!.surname} was covered twice; kept the first.`);
-      continue;
-    }
-    payerOf.set(c.coveredFamilyId, c.payerFamilyId);
+    if (adjusted.has(a.familyId)) warnings.push(`The ${name(a.familyId)} family had two discounts; kept the last one.`);
+    adjusted.set(a.familyId, a);
   }
-  const resolvePayer = (id: string): string => {
+  for (const f of participants) {
+    const s = share.get(f.id) ?? 0;
+    if (scholarship.has(f.id)) {
+      owes.set(f.id, 0);
+      if (rules.scholarshipPolicy === "team_absorbs") absorbed += s;
+      ownNote.set(f.id, rules.scholarshipPolicy === "team_absorbs" ? "Scholarship: the team fund covers it" : "Scholarship: no charge");
+      continue;
+    }
+    const a = adjusted.get(f.id);
+    if (!a) {
+      owes.set(f.id, s);
+      continue;
+    }
+    let pay = s;
+    if (a.fraction !== null && a.fraction !== undefined) pay = Math.round(s * clampFraction(a.fraction));
+    else if (a.amountCents !== null && a.amountCents !== undefined) pay = Math.max(0, Math.round(a.amountCents));
+    if (pay > s * 3 && s > 0) warnings.push(`The ${f.surname} family's amount (${(pay / 100).toFixed(2)}) is over three times a normal share. Double-check it.`);
+    absorbed += Math.max(0, s - pay);
+    owes.set(f.id, pay);
+    ownNote.set(f.id, `${a.reason || "Adjusted"}${pay < s ? `: the team fund covers the other ${((s - pay) / 100).toFixed(2)}` : ""}`);
+  }
+
+  // 3. Who pays for whom. Full covers chain (A covers B, B covers C => A pays C); partial covers split the share.
+  const covers = new Map<string, { payer: string; fraction: number }>();
+  for (const c of rules.coverings) {
+    if (!known(c.payerFamilyId) || !known(c.coveredFamilyId) || c.payerFamilyId === c.coveredFamilyId) continue;
+    if (excluded.has(c.payerFamilyId)) {
+      warnings.push(`The ${name(c.payerFamilyId)} family is not on this charge, so they cannot cover anyone.`);
+      continue;
+    }
+    if (excluded.has(c.coveredFamilyId) || scholarship.has(c.coveredFamilyId)) continue;
+    if (covers.has(c.coveredFamilyId)) {
+      warnings.push(`The ${name(c.coveredFamilyId)} family was covered twice; kept the first.`);
+      continue;
+    }
+    covers.set(c.coveredFamilyId, { payer: c.payerFamilyId, fraction: clampFraction(c.fraction ?? 1) });
+  }
+  const fullPayer = (id: string): string => {
     const seen = new Set<string>();
     let cur = id;
-    while (payerOf.has(cur) && !seen.has(cur)) {
+    while (covers.get(cur)?.fraction === 1 && !seen.has(cur)) {
       seen.add(cur);
-      cur = payerOf.get(cur)!;
+      cur = covers.get(cur)!.payer;
     }
     return cur;
   };
@@ -144,45 +160,92 @@ export function allocate(rules: ChargeRules, families: Family[]): Allocation {
       lines.push({ familyId: f.id, payerFamilyId: null, amountCents: 0, reason: "excluded", note: "Not on this charge" });
       continue;
     }
-    const amount = shares.get(f.id) ?? 0;
+    const amount = owes.get(f.id) ?? 0;
     if (scholarship.has(f.id)) {
-      const note =
-        rules.scholarshipPolicy === "team_absorbs" ? "Scholarship: the team fund covers it" : "Scholarship: no charge";
-      lines.push({ familyId: f.id, payerFamilyId: null, amountCents: rules.scholarshipPolicy === "team_absorbs" ? amount : 0, reason: "scholarship", note });
+      lines.push({ familyId: f.id, payerFamilyId: null, amountCents: 0, reason: "scholarship", note: ownNote.get(f.id)! });
       continue;
     }
-    const payer = resolvePayer(f.id);
-    const c = custom.get(f.id);
-    const note = payer !== f.id ? `Covered by the ${byId.get(payer)!.surname} family` : c ? c.reason : "";
-    lines.push({ familyId: f.id, payerFamilyId: payer, amountCents: amount, reason: c ? "custom" : "share", note });
+    const reason = adjusted.has(f.id) ? "adjusted" : "share";
+    const cover = covers.get(f.id);
+    if (cover && cover.fraction < 1) {
+      const coveredPart = Math.round(amount * cover.fraction);
+      const payer = fullPayer(cover.payer);
+      lines.push({ familyId: f.id, payerFamilyId: payer, amountCents: coveredPart, reason: "covered", note: `${Math.round(cover.fraction * 100)}% covered by the ${name(payer)} family` });
+      lines.push({ familyId: f.id, payerFamilyId: f.id, amountCents: amount - coveredPart, reason, note: ownNote.get(f.id) ?? "" });
+      continue;
+    }
+    const payer = fullPayer(f.id);
+    lines.push({
+      familyId: f.id,
+      payerFamilyId: payer,
+      amountCents: amount,
+      reason: payer !== f.id ? "covered" : reason,
+      note: payer !== f.id ? `Covered by the ${name(payer)} family` : ownNote.get(f.id) ?? "",
+    });
   }
 
-  const totalCents = lines.reduce((a, l) => a + (l.reason === "excluded" ? 0 : l.amountCents), 0);
-  return { lines, totalCents, absorbedCents: absorbed, warnings };
+  // 4. Money already handed over outside PayPal reduces what the payer is invoiced.
+  const billOf = (payer: string) => lines.filter((l) => l.payerFamilyId === payer).reduce((a, l) => a + l.amountCents, 0);
+  const prepaid: Allocation["prepaid"] = [];
+  for (const p of rules.prepaid) {
+    if (!known(p.familyId) || excluded.has(p.familyId)) continue;
+    const bill = billOf(p.familyId);
+    if (bill === 0) {
+      if (covers.has(p.familyId)) warnings.push(`The ${name(p.familyId)} family already paid, but someone else is covering them. Check who should get the credit.`);
+      continue;
+    }
+    let amt = p.amountCents !== null && p.amountCents !== undefined ? Math.round(p.amountCents) : p.fraction ? Math.round(bill * clampFraction(p.fraction)) : bill;
+    if (amt > bill) {
+      warnings.push(`The ${name(p.familyId)} family already paid ${(amt / 100).toFixed(2)}, more than their ${(bill / 100).toFixed(2)} share. The extra ${((amt - bill) / 100).toFixed(2)} is not credited here.`);
+      amt = bill;
+    }
+    if (amt > 0) prepaid.push({ familyId: p.familyId, amountCents: amt, method: p.method });
+  }
+
+  const totalCents = [...share.values()].reduce((a, b) => a + b, 0);
+  const prepaidCents = prepaid.reduce((a, p) => a + p.amountCents, 0);
+  const invoicedCents = lines.reduce((a, l) => a + (l.payerFamilyId ? l.amountCents : 0), 0) - prepaidCents;
+  return { lines, shareCents: Object.fromEntries(share), totalCents, absorbedCents: absorbed, prepaid, prepaidCents, invoicedCents, roundingCents: rounding, perUnitCents: perUnit, warnings };
 }
 
-/** Group a charge's lines into one invoice per paying family. */
-export function invoicesFor(charge: Pick<Charge, "title" | "lines">, families: Family[]) {
+const METHOD: Record<PrepaidMethod, string> = { cash: "cash", venmo: "Venmo", zelle: "Zelle", check: "check", other: "outside PayPal" };
+export function methodLabel(m: PrepaidMethod) {
+  return METHOD[m] ?? "outside PayPal";
+}
+
+/** Group a charge's lines into one invoice per paying family, net of what they already paid. */
+export function invoicesFor(charge: Pick<Charge, "title" | "lines"> & { prepaid?: Allocation["prepaid"] }, families: Family[]) {
   const byId = new Map(families.map((f) => [f.id, f]));
   const groups = new Map<string, InvoiceItem[]>();
   for (const l of charge.lines) {
     if (!l.payerFamilyId || l.amountCents <= 0) continue;
     const fam = byId.get(l.familyId)!;
     const players = fam.players.map((p) => p.name).join(" & ");
+    const own = l.payerFamilyId === l.familyId;
     const item: InvoiceItem = {
       name: `${charge.title}: ${players}`,
-      description: l.payerFamilyId === l.familyId ? `${fam.surname} family share` : `Covering the ${fam.surname} family`,
+      description: own ? `${fam.surname} family share${l.reason === "adjusted" && l.note ? ` (${l.note.split(":")[0].toLowerCase()})` : ""}` : l.note.startsWith("Covered") ? `Covering the ${fam.surname} family` : `Covering part of the ${fam.surname} family's share`,
       amountCents: l.amountCents,
     };
     const list = groups.get(l.payerFamilyId) ?? [];
-    // Keep the payer's own line first.
-    if (l.payerFamilyId === l.familyId) list.unshift(item);
+    if (own) list.unshift(item);
     else list.push(item);
     groups.set(l.payerFamilyId, list);
   }
-  return [...groups.entries()].map(([payerFamilyId, items]) => ({
-    payerFamilyId,
-    items,
-    amountCents: items.reduce((a, i) => a + i.amountCents, 0),
-  }));
+  const out: { payerFamilyId: string; items: InvoiceItem[]; amountCents: number; prepaidCents: number }[] = [];
+  for (const [payerFamilyId, items] of groups) {
+    const paid = charge.prepaid?.find((p) => p.familyId === payerFamilyId);
+    let credit = paid?.amountCents ?? 0;
+    // PayPal invoice items are positive, so apply the credit by reducing items (own share first).
+    const net = items
+      .map((it) => {
+        const take = Math.min(credit, it.amountCents);
+        credit -= take;
+        return take ? { ...it, amountCents: it.amountCents - take, description: `${it.description}, less ${(take / 100).toFixed(2)} already paid in ${methodLabel(paid!.method)}` } : it;
+      })
+      .filter((it) => it.amountCents > 0);
+    const amountCents = net.reduce((a, i) => a + i.amountCents, 0);
+    if (amountCents > 0) out.push({ payerFamilyId, items: net, amountCents, prepaidCents: paid?.amountCents ?? 0 });
+  }
+  return out;
 }

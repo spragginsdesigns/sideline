@@ -3,7 +3,7 @@
 // simulator's webhook events (which also mutate) never deadlock.
 import { gateway, simulator } from "./paypal/index.ts";
 import { mutate, newId, readState } from "./store.ts";
-import { allocate, invoicesFor, type Allocation, type ChargeRules } from "./ledger/allocate.ts";
+import { allocate, invoicesFor, methodLabel, type Allocation, type ChargeRules } from "./ledger/allocate.ts";
 import { readChargeMessage } from "./ai/rules.ts";
 import { draftNudges, type Nudge } from "./ai/nudges.ts";
 import { formatCents } from "./money.ts";
@@ -33,9 +33,73 @@ export async function previewCharge(message: string): Promise<ChargePreview> {
 
 export function buildPreview(rules: ChargeRules, isMoneyRequest = true): ChargePreview {
   const state = readState();
-  const allocation = allocate(rules, state.team.families);
-  const invoices = invoicesFor({ title: rules.title, lines: allocation.lines }, state.team.families);
-  return { rules, allocation, invoices, isMoneyRequest };
+  const clean = validateRules(rules);
+  const allocation = allocate(clean, state.team.families);
+  const invoices = invoicesFor({ title: clean.title, lines: allocation.lines, prepaid: allocation.prepaid }, state.team.families);
+  return { rules: clean, allocation, invoices, isMoneyRequest };
+}
+
+const MAX_CENTS = 2_000_000; // $20,000: far above any youth-team charge, well below a typo'd fortune
+
+/** Rules come back from the browser, so check every field before any money logic sees them. */
+export function validateRules(r: ChargeRules): ChargeRules {
+  if (!r || typeof r !== "object") throw new Error("Missing charge rules");
+  const ids = new Set(readState().team.families.map((f) => f.id));
+  const cents = (v: unknown, what: string) => {
+    if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v > MAX_CENTS) throw new Error(`${what} must be a whole number of cents between $0 and $20,000`);
+    return v;
+  };
+  const idList = (v: unknown, what: string) => {
+    if (!Array.isArray(v)) throw new Error(`${what} must be a list`);
+    for (const id of v) if (typeof id !== "string" || !ids.has(id)) throw new Error(`${what} has an unknown family`);
+    return v as string[];
+  };
+  if (!["team_total", "per_family", "per_player"].includes(r.amountKind)) throw new Error("Unknown amount kind");
+  if (!["family", "player"].includes(r.splitBasis)) throw new Error("Unknown split basis");
+  if (!["team_absorbs", "split_among_others"].includes(r.scholarshipPolicy)) throw new Error("Unknown scholarship policy");
+  if (r.dueDate !== null && !(typeof r.dueDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(r.dueDate))) throw new Error("Due date must be YYYY-MM-DD");
+  const title = String(r.title ?? "").trim().slice(0, 60);
+  if (!title) throw new Error("The charge needs a title");
+  if (!Array.isArray(r.coverings) || !Array.isArray(r.adjustments) || !Array.isArray(r.prepaid)) throw new Error("Malformed rules");
+  const fraction = (v: unknown, what: string, max = 1) => {
+    if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > max) throw new Error(`${what} must be a fraction between 0 and ${max}`);
+    return v;
+  };
+  return {
+    title,
+    amountKind: r.amountKind,
+    amountCents: cents(r.amountCents, "The amount"),
+    splitBasis: r.splitBasis,
+    dueDate: r.dueDate,
+    scholarshipFamilyIds: idList(r.scholarshipFamilyIds, "Scholarships"),
+    scholarshipPolicy: r.scholarshipPolicy,
+    coverings: r.coverings.map((c) => {
+      idList([c?.payerFamilyId, c?.coveredFamilyId], "A covering");
+      return { payerFamilyId: c.payerFamilyId, coveredFamilyId: c.coveredFamilyId, fraction: fraction(c.fraction ?? 1, "A covering") };
+    }),
+    adjustments: r.adjustments.map((a) => {
+      idList([a?.familyId], "A discount");
+      return {
+        familyId: a.familyId,
+        fraction: a.fraction === null || a.fraction === undefined ? null : fraction(a.fraction, "A discount", 5),
+        amountCents: a.amountCents === null || a.amountCents === undefined ? null : cents(a.amountCents, "A fixed amount"),
+        reason: String(a.reason ?? "").slice(0, 120),
+      };
+    }),
+    prepaid: r.prepaid.map((p) => {
+      idList([p?.familyId], "An earlier payment");
+      if (!["cash", "venmo", "zelle", "check", "other"].includes(p.method)) throw new Error("Unknown payment method");
+      return {
+        familyId: p.familyId,
+        amountCents: p.amountCents === null || p.amountCents === undefined ? null : cents(p.amountCents, "An earlier payment"),
+        fraction: p.fraction === null || p.fraction === undefined ? null : fraction(p.fraction, "An earlier payment"),
+        method: p.method,
+      };
+    }),
+    excludedFamilyIds: idList(r.excludedFamilyIds, "Exclusions"),
+    notes: (Array.isArray(r.notes) ? r.notes : []).map((n) => String(n).slice(0, 240)).slice(0, 20),
+    ambiguities: (Array.isArray(r.ambiguities) ? r.ambiguities : []).map((n) => String(n).slice(0, 240)).slice(0, 20),
+  };
 }
 
 function slug(s: string) {
@@ -58,26 +122,99 @@ function draftInput(inv: Invoice, charge: Charge): DraftInvoiceInput {
   };
 }
 
-/** Confirm a preview: store the charge, then create, send and QR-code one PayPal invoice per paying family. */
-export async function createCharge(rules: ChargeRules, sourceMessage: string): Promise<{ chargeId: string; sent: number; failed: { family: string; error: string }[] }> {
+/**
+ * Take one invoice as far as it can go: create the PayPal draft, send it, fetch its QR code.
+ * Each step is saved as soon as PayPal confirms it, so a retry resumes where it stopped
+ * instead of creating a second PayPal invoice.
+ */
+async function publishInvoice(invoiceId: string): Promise<void> {
+  const gw = gateway();
+  const team = readState().team;
+  let inv = readState().invoices.find((i) => i.id === invoiceId)!;
+  const charge = readState().charges.find((c) => c.id === inv.chargeId)!;
+  if (!inv.paypalInvoiceId) {
+    const created = await gw.createDraftInvoice(draftInput(inv, charge));
+    await mutate((state) => {
+      state.invoices.find((x) => x.id === invoiceId)!.paypalInvoiceId = created.paypalInvoiceId;
+    });
+    inv = readState().invoices.find((i) => i.id === invoiceId)!;
+  }
+  if (inv.status === "DRAFT") {
+    const sent = await gw.sendInvoice(inv.paypalInvoiceId!, {
+      subject: `${team.name}: ${charge.title} (${formatCents(inv.amountCents)})`,
+      note: `Pay with PayPal, Venmo or card. Questions? Reply to ${team.treasurer}.`,
+    });
+    await mutate((state) => {
+      const row = state.invoices.find((x) => x.id === invoiceId)!;
+      row.status = "SENT";
+      row.sentAt = new Date().toISOString();
+      row.payerViewUrl = sent.payerViewUrl;
+    });
+  }
+  if (!readState().invoices.find((i) => i.id === invoiceId)!.qrCodeDataUrl) {
+    const qr = await gw.generateQrCode(inv.paypalInvoiceId!);
+    if (qr) await mutate((state) => void (state.invoices.find((x) => x.id === invoiceId)!.qrCodeDataUrl = qr));
+  }
+}
+
+async function publishAll(invoiceIds: string[]) {
+  const failed: { family: string; error: string }[] = [];
+  let sent = 0;
+  // Small parallel batches: fast for the treasurer, polite to PayPal's rate limits.
+  const BATCH = 4;
+  for (let i = 0; i < invoiceIds.length; i += BATCH) {
+    await Promise.all(
+      invoiceIds.slice(i, i + BATCH).map(async (id) => {
+        const inv = readState().invoices.find((x) => x.id === id)!;
+        const fam = readState().team.families.find((f) => f.id === inv.payerFamilyId)!;
+        try {
+          await publishInvoice(id);
+          sent++;
+        } catch (e) {
+          failed.push({ family: fam.surname, error: (e as Error).message });
+        }
+      }),
+    );
+  }
+  return { sent, failed };
+}
+
+/**
+ * Confirm a preview: store the charge, then create, send and QR-code one PayPal invoice per paying family.
+ * `clientKey` makes the call idempotent: a double-click or retried request returns the first charge.
+ */
+export async function createCharge(rules: ChargeRules, sourceMessage: string, clientKey?: string): Promise<{ chargeId: string; sent: number; failed: { family: string; error: string }[]; duplicate?: boolean }> {
   const preview = buildPreview(rules);
   if (preview.invoices.length === 0) throw new Error("Nobody owes anything on this charge, so there is nothing to send.");
+  const key = clientKey?.slice(0, 80) || undefined;
   const chargeId = newId("c");
-  const stamp = Date.now().toString(36).toUpperCase().slice(-4);
-  await mutate((state) => {
+  const outcome = await mutate((state) => {
+    if (key) {
+      const existing = state.charges.find((c) => c.clientKey === key);
+      if (existing) return { existing: existing.id };
+    }
+    const stamp = chargeId.split("-").pop()!.toUpperCase();
     const charge: Charge = {
       id: chargeId,
-      title: rules.title,
+      title: preview.rules.title,
       totalCents: preview.allocation.totalCents,
-      dueDate: rules.dueDate,
+      dueDate: preview.rules.dueDate,
       createdAt: new Date().toISOString(),
-      sourceMessage,
-      rulesSummary: rules.notes,
-      warnings: [...rules.ambiguities, ...preview.allocation.warnings],
+      sourceMessage: sourceMessage.slice(0, 4000),
+      rulesSummary: preview.rules.notes,
+      warnings: [...preview.rules.ambiguities, ...preview.allocation.warnings],
       lines: preview.allocation.lines,
       absorbedCents: preview.allocation.absorbedCents,
+      prepaid: preview.allocation.prepaid,
+      roundingCents: preview.allocation.roundingCents,
+      clientKey: key,
     };
     state.charges.push(charge);
+    // Money already handed to the treasurer is real money in: record it now.
+    for (const pp of preview.allocation.prepaid) {
+      const fam = state.team.families.find((f) => f.id === pp.familyId)!;
+      state.events.push({ id: newId("e"), at: charge.createdAt, type: "payment.offline", summary: `${fam.surname} family paid ${formatCents(pp.amountCents)} ${methodLabel(pp.method)} toward ${charge.title} (recorded by the treasurer)`, amountCents: pp.amountCents, source: "treasurer", ref: chargeId, paypalEventId: null });
+    }
     for (const p of preview.invoices) {
       const fam = state.team.families.find((f) => f.id === p.payerFamilyId)!;
       state.invoices.push({
@@ -88,7 +225,8 @@ export async function createCharge(rules: ChargeRules, sourceMessage: string): P
         amountCents: p.amountCents,
         status: "DRAFT",
         paypalInvoiceId: null,
-        paypalInvoiceNumber: `${state.team.shortName}-${slug(rules.title)}-${slug(fam.surname)}-${stamp}`,
+        // Deterministic per charge + family: PayPal rejects a duplicate invoice number.
+        paypalInvoiceNumber: `${state.team.shortName}-${slug(charge.title)}-${slug(fam.surname)}-${stamp}`,
         payerViewUrl: null,
         qrCodeDataUrl: null,
         createdAt: new Date().toISOString(),
@@ -98,50 +236,22 @@ export async function createCharge(rules: ChargeRules, sourceMessage: string): P
         reminders: [],
       });
     }
-    if (charge.absorbedCents > 0) {
-      state.events.push({ id: newId("e"), at: charge.createdAt, type: "expense", summary: `Scholarship covered by the team fund: ${charge.title}`, amountCents: -charge.absorbedCents, source: "treasurer", ref: chargeId, paypalEventId: null });
-    }
+    return { existing: null };
   });
-
-  const gw = gateway();
-  const failed: { family: string; error: string }[] = [];
-  let sent = 0;
-  const drafts = readState().invoices.filter((i) => i.chargeId === chargeId);
-  const charge = readState().charges.find((c) => c.id === chargeId)!;
-  // Small parallel batches: fast for the treasurer, polite to PayPal's rate limits.
-  const BATCH = 4;
-  for (let i = 0; i < drafts.length; i += BATCH) {
-    await Promise.all(
-      drafts.slice(i, i + BATCH).map(async (inv) => {
-        const fam = readState().team.families.find((f) => f.id === inv.payerFamilyId)!;
-        try {
-          const created = await gw.createDraftInvoice(draftInput(inv, charge));
-          const sentRes = await gw.sendInvoice(created.paypalInvoiceId, {
-            subject: `${readState().team.name}: ${charge.title} (${formatCents(inv.amountCents)})`,
-            note: `Pay with PayPal, Venmo or card. Questions? Reply to ${readState().team.treasurer}.`,
-          });
-          const qr = await gw.generateQrCode(created.paypalInvoiceId);
-          await mutate((state) => {
-            const row = state.invoices.find((x) => x.id === inv.id)!;
-            row.paypalInvoiceId = created.paypalInvoiceId;
-            row.status = "SENT";
-            row.sentAt = new Date().toISOString();
-            row.payerViewUrl = sentRes.payerViewUrl;
-            row.qrCodeDataUrl = qr;
-          });
-          sent++;
-        } catch (e) {
-          failed.push({ family: fam.surname, error: (e as Error).message });
-        }
-      }),
-    );
+  if (outcome.existing) {
+    const n = readState().invoices.filter((i) => i.chargeId === outcome.existing && i.status !== "DRAFT").length;
+    return { chargeId: outcome.existing, sent: n, failed: [], duplicate: true };
   }
+
+  const ids = readState().invoices.filter((i) => i.chargeId === chargeId).map((i) => i.id);
+  const { sent, failed } = await publishAll(ids);
+  const charge = readState().charges.find((c) => c.id === chargeId)!;
   await mutate((state) => {
     state.events.push({
       id: newId("e"),
       at: new Date().toISOString(),
       type: "charge.created",
-      summary: `${charge.title}: ${sent} PayPal invoice${sent === 1 ? "" : "s"} sent${failed.length ? `, ${failed.length} failed` : ""}`,
+      summary: `${charge.title}: ${sent} PayPal invoice${sent === 1 ? "" : "s"} sent${failed.length ? `, ${failed.length} failed` : ""}${charge.absorbedCents ? ` · ${formatCents(charge.absorbedCents)} scholarship covered by the team` : ""}`,
       amountCents: 0,
       source: "treasurer",
       ref: chargeId,
@@ -151,23 +261,20 @@ export async function createCharge(rules: ChargeRules, sourceMessage: string): P
   return { chargeId, sent, failed };
 }
 
-/** Retry invoices left in DRAFT by a failed send. */
+/** Retry invoices a failed send left behind; resumes each from the step it reached. */
 export async function retryDrafts(chargeId: string) {
-  const charge = readState().charges.find((c) => c.id === chargeId);
-  if (!charge) throw new Error("Unknown charge");
-  const gw = gateway();
-  let sent = 0;
-  for (const inv of readState().invoices.filter((i) => i.chargeId === chargeId && i.status === "DRAFT")) {
-    const created = inv.paypalInvoiceId ? { paypalInvoiceId: inv.paypalInvoiceId } : await gw.createDraftInvoice(draftInput(inv, charge));
-    const s = await gw.sendInvoice(created.paypalInvoiceId, { subject: `${readState().team.name}: ${charge.title}`, note: "" });
-    const qr = await gw.generateQrCode(created.paypalInvoiceId);
-    await mutate((state) => {
-      const row = state.invoices.find((x) => x.id === inv.id)!;
-      Object.assign(row, { paypalInvoiceId: created.paypalInvoiceId, status: "SENT", sentAt: new Date().toISOString(), payerViewUrl: s.payerViewUrl, qrCodeDataUrl: qr });
-    });
-    sent++;
-  }
-  return { sent };
+  if (!readState().charges.some((c) => c.id === chargeId)) throw new Error("Unknown charge");
+  const ids = readState().invoices.filter((i) => i.chargeId === chargeId && (i.status === "DRAFT" || (i.status === "SENT" && !i.qrCodeDataUrl))).map((i) => i.id);
+  return publishAll(ids);
+}
+
+/** A family paid cash or by check: record it on their PayPal invoice so PayPal and the board agree. */
+export async function recordOfflinePayment(invoiceId: string, method: "CASH" | "CHECK") {
+  const inv = readState().invoices.find((i) => i.id === invoiceId);
+  if (!inv?.paypalInvoiceId || inv.status !== "SENT") throw new Error("That invoice is not waiting for payment.");
+  rehydrate(inv);
+  await gateway().recordPayment(inv.paypalInvoiceId, { method, amountCents: inv.amountCents, date: todayIso(), note: `Recorded by ${readState().team.treasurer} in Sideline` });
+  if (gateway().mode === "live") await syncFromPayPal();
 }
 
 export function lateInvoices(chargeId?: string) {
@@ -176,7 +283,10 @@ export function lateInvoices(chargeId?: string) {
     if (i.status !== "SENT") return false;
     if (chargeId && i.chargeId !== chargeId) return false;
     const c = state.charges.find((x) => x.id === i.chargeId);
-    // Remind anyone past due; for a charge with no due date, anyone sent 3+ days ago.
+    // Remind anyone past due (for a charge with no due date, anyone sent 3+ days ago),
+    // but never twice in a day.
+    const last = i.reminders.at(-1);
+    if (last && Date.now() - new Date(last.at).getTime() < 86_400_000) return false;
     return c?.dueDate ? isLate(i, c) : Date.now() - new Date(i.sentAt ?? i.createdAt).getTime() > 3 * 86_400_000;
   });
 }
@@ -243,25 +353,40 @@ export async function sendReminders(reminders: { invoiceId: string; subject: str
 
 /** Mark a game final and pay its referee through PayPal Payouts. */
 export async function finalizeGame(gameId: string, score: { us: number; them: number }) {
-  const state = readState();
-  const game = state.games.find((g) => g.id === gameId);
-  if (!game) throw new Error("Unknown game");
-  if (game.status === "final" && game.payout) throw new Error("This game is already final and the referee was paid.");
-  const ref = state.team.referees.find((r) => r.id === game.refereeId)!;
-  const payout = await gateway().createPayout({
-    senderBatchId: `${state.team.shortName}-${game.id}-${Date.now().toString(36)}`,
-    emailSubject: `${state.team.name} referee fee`,
-    emailMessage: `Thanks for reffing ${state.team.name} vs ${game.opponent}!`,
-    items: [{ receiverEmail: ref.email, amountCents: ref.feeCents, note: `Referee fee: vs ${game.opponent}`, senderItemId: game.id }],
+  const team = readState().team;
+  // Claim the game before any network call, so a double-click or a second tab can't pay the referee twice.
+  const claim = await mutate((s) => {
+    const g = s.games.find((x) => x.id === gameId);
+    if (!g) throw new Error("Unknown game");
+    if (g.payout) throw new Error("This game is already final and the referee was paid.");
+    if (new Date(g.date).getTime() > Date.now() + 3 * 3600_000) throw new Error("That game hasn't been played yet.");
+    const ref = s.team.referees.find((r) => r.id === g.refereeId)!;
+    g.payout = { batchId: "", itemId: null, status: "PROCESSING", amountCents: ref.feeCents, createdAt: new Date().toISOString(), paidAt: null };
+    return { ref, opponent: g.opponent };
   });
-  await mutate((s) => {
-    const g = s.games.find((x) => x.id === gameId)!;
-    g.status = "final";
-    g.score = score;
-    g.payout = { batchId: payout.batchId, itemId: null, status: "PENDING", amountCents: ref.feeCents, createdAt: new Date().toISOString(), paidAt: null };
-    s.events.push({ id: newId("e"), at: new Date().toISOString(), type: "payout.created", summary: `Final ${score.us}-${score.them} vs ${g.opponent}: paying referee ${ref.name}`, amountCents: 0, source: "treasurer", ref: payout.batchId, paypalEventId: null });
-  });
-  return { batchId: payout.batchId };
+  try {
+    const payout = await gateway().createPayout({
+      // One payout per game, ever: PayPal rejects a reused sender_batch_id.
+      senderBatchId: `${team.shortName}-${team.id}-${gameId}`.slice(0, 127),
+      emailSubject: `${team.name} referee fee`,
+      emailMessage: `Thanks for reffing ${team.name} vs ${claim.opponent}!`,
+      items: [{ receiverEmail: claim.ref.email, amountCents: claim.ref.feeCents, note: `Referee fee: vs ${claim.opponent}`, senderItemId: gameId }],
+    });
+    await mutate((s) => {
+      const g = s.games.find((x) => x.id === gameId)!;
+      g.status = "final";
+      g.score = score;
+      g.payout = { ...g.payout!, batchId: payout.batchId, status: g.payout?.status === "SUCCESS" ? "SUCCESS" : "PENDING" };
+      s.events.push({ id: newId("e"), at: new Date().toISOString(), type: "payout.created", summary: `Final ${score.us}-${score.them} vs ${g.opponent}: paying referee ${claim.ref.name}`, amountCents: 0, source: "treasurer", ref: payout.batchId, paypalEventId: null });
+    });
+    return { batchId: payout.batchId };
+  } catch (e) {
+    await mutate((s) => {
+      const g = s.games.find((x) => x.id === gameId)!;
+      if (g.payout?.status === "PROCESSING") g.payout = null;
+    });
+    throw e;
+  }
 }
 
 /** Live mode: catch payments PayPal has recorded even if a webhook never reached us (e.g. on localhost). */
@@ -288,7 +413,7 @@ export async function syncFromPayPal(): Promise<{ checked: number; updated: numb
 }
 
 /** Simulator only: what a family does on PayPal's checkout page. */
-export async function simulatePayment(invoiceId: string, method: "PAYPAL" | "VENMO" = "PAYPAL") {
+export async function simulatePayment(invoiceId: string, method: "PAYPAL" | "VENMO" | "CARD" = "PAYPAL") {
   const sim = simulator();
   if (!sim) throw new Error("Simulated payments are only available without PayPal credentials. Pay through the real PayPal link instead.");
   const inv = readState().invoices.find((i) => i.id === invoiceId);
@@ -297,7 +422,7 @@ export async function simulatePayment(invoiceId: string, method: "PAYPAL" | "VEN
   await sim.payInvoice(inv.paypalInvoiceId, method);
 }
 
-export async function simulatePaymentByPayPalId(paypalInvoiceId: string, method: "PAYPAL" | "VENMO" = "PAYPAL") {
+export async function simulatePaymentByPayPalId(paypalInvoiceId: string, method: "PAYPAL" | "VENMO" | "CARD" = "PAYPAL") {
   const inv = readState().invoices.find((i) => i.paypalInvoiceId === paypalInvoiceId);
   if (!inv) throw new Error("Unknown PayPal invoice");
   return simulatePayment(inv.id, method);

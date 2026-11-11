@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, MessageSquareText, Send, Sparkles, Undo2 } from "lucide-react";
 import type { DashboardView } from "@/lib/view";
 import type { ChargePreview } from "@/lib/sideline";
@@ -12,18 +12,31 @@ const SAMPLES = [
   "Ref fees went up, need $12 per kid for the rest of the season. Chens are sitting this one out (Lily's injured). Due Sunday.",
 ];
 
-export function ChargeComposer({ data, onCreated }: { data: DashboardView; onCreated: (chargeId: string, sent: number) => void }) {
+export function ChargeComposer({
+  data,
+  onCreated,
+  onPreviewChange,
+}: {
+  data: DashboardView;
+  onCreated: (chargeId: string, sent: number) => void;
+  onPreviewChange?: (open: boolean) => void;
+}) {
   const [message, setMessage] = useState("");
   const [preview, setPreview] = useState<ChargePreview | null>(null);
   const [phase, setPhase] = useState<"idle" | "reading" | "sending">("idle");
   const [error, setError] = useState<string | null>(null);
+  // One idempotency key per preview: a double-click or a retried request can't create the charge twice.
+  const sendKey = useRef<string | null>(null);
+  const sending = useRef(false);
   const fam = (id: string) => data.team.families.find((f) => f.id === id)!;
+  useEffect(() => onPreviewChange?.(preview !== null), [preview, onPreviewChange]);
 
   async function read() {
     setPhase("reading");
     setError(null);
     try {
       setPreview(await api<ChargePreview>("/api/charges/preview", { message }));
+      sendKey.current = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -32,11 +45,12 @@ export function ChargeComposer({ data, onCreated }: { data: DashboardView; onCre
   }
 
   async function send() {
-    if (!preview) return;
+    if (!preview || sending.current) return;
+    sending.current = true;
     setPhase("sending");
     setError(null);
     try {
-      const r = await api<{ chargeId: string; sent: number; failed: { family: string; error: string }[] }>("/api/charges", { rules: preview.rules, message });
+      const r = await api<{ chargeId: string; sent: number; failed: { family: string; error: string }[] }>("/api/charges", { rules: preview.rules, message, clientKey: sendKey.current });
       if (r.failed.length) setError(`${r.failed.length} invoice(s) did not send: ${r.failed.map((f) => `${f.family} (${f.error})`).join("; ")}`);
       onCreated(r.chargeId, r.sent);
       if (!r.failed.length) {
@@ -46,15 +60,33 @@ export function ChargeComposer({ data, onCreated }: { data: DashboardView; onCre
     } catch (e) {
       setError((e as Error).message);
     } finally {
+      sending.current = false;
       setPhase("idle");
     }
   }
 
   const rules = preview?.rules;
+  const alloc = preview?.allocation;
   const billable = preview?.invoices.length ?? 0;
   const invoicedTotal = preview?.invoices.reduce((a, i) => a + i.amountCents, 0) ?? 0;
   const stated = rules ? (rules.amountKind === "team_total" ? rules.amountCents : null) : null;
-  const addsUp = stated === null || invoicedTotal + (preview?.allocation.absorbedCents ?? 0) === stated;
+  // Every cent accounted for: invoiced + already paid + team-covered = total (+ rounding to the team fund).
+  const accounted = invoicedTotal + (alloc?.prepaidCents ?? 0) + (alloc?.absorbedCents ?? 0);
+  const addsUp = alloc ? accounted === alloc.totalCents && (stated === null || alloc.totalCents === stated + alloc.roundingCents) : true;
+  // Fairness check: flag any invoice far above a normal share, and any participating family billed nothing.
+  const fairness: string[] = [];
+  if (preview && alloc) {
+    const perUnit = alloc.perUnitCents ?? 0;
+    for (const inv of preview.invoices) {
+      const f = fam(inv.payerFamilyId);
+      const normal = perUnit * (rules?.amountKind === "per_family" || rules?.splitBasis === "family" ? 1 : f.players.length);
+      if (normal > 0 && inv.amountCents > normal * 1.5 && inv.items.length === 1) fairness.push(`The ${f.surname} family is billed ${money(inv.amountCents)}, much more than a normal ${money(normal)} share. Is that right?`);
+    }
+    for (const l of alloc.lines) {
+      const billed = preview.invoices.some((i) => i.payerFamilyId === l.familyId) || alloc.prepaid.some((p) => p.familyId === l.familyId);
+      if (l.reason === "share" && l.payerFamilyId === l.familyId && !billed && (alloc.shareCents[l.familyId] ?? 0) === 0 && (rules?.amountCents ?? 0) > 0) fairness.push(`The ${fam(l.familyId).surname} family isn't billed anything. Check the message.`);
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -110,7 +142,7 @@ export function ChargeComposer({ data, onCreated }: { data: DashboardView; onCre
                     <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-turf" /> {n}
                   </li>
                 ))}
-                {[...rules.ambiguities, ...preview.allocation.warnings].map((n, i) => (
+                {[...fairness, ...rules.ambiguities, ...preview.allocation.warnings].map((n, i) => (
                   <li key={`w${i}`} className="flex gap-2 text-sm text-led-bright">
                     <AlertTriangle size={16} className="mt-0.5 shrink-0" /> {n}
                   </li>
@@ -122,10 +154,13 @@ export function ChargeComposer({ data, onCreated }: { data: DashboardView; onCre
           <div>
             <div className="mb-2 flex items-baseline justify-between">
               <div className="label">{billable} PayPal invoices</div>
-              <div className={`text-xs ${addsUp ? "text-turf-bright" : "text-coral-soft"}`}>
+              <div className={`text-right text-xs ${addsUp ? "text-turf-bright" : "text-coral-soft"}`}>
                 {money(invoicedTotal)} invoiced
-                {preview.allocation.absorbedCents > 0 && ` + ${money(preview.allocation.absorbedCents)} team-covered`}
-                {stated !== null && (addsUp ? ` = ${money(stated)} ✓` : ` ≠ ${money(stated)}`)}
+                {alloc!.prepaidCents > 0 && ` + ${money(alloc!.prepaidCents)} already paid`}
+                {alloc!.absorbedCents > 0 && ` + ${money(alloc!.absorbedCents)} team-covered`}
+                {` = ${money(alloc!.totalCents - alloc!.roundingCents)}`}
+                {alloc!.roundingCents > 0 && ` + ${alloc!.roundingCents}¢`} {addsUp ? "✓" : "✗"}
+                {alloc!.roundingCents > 0 && <span className="block text-chalk-faint">{alloc!.roundingCents}¢ of rounding goes to the team fund so everyone pays the same {money(alloc!.perUnitCents ?? 0)}</span>}
               </div>
             </div>
             <ul className="max-h-80 divide-y divide-chalk/5 overflow-y-auto rounded-lg border border-chalk/10">
@@ -138,18 +173,21 @@ export function ChargeComposer({ data, onCreated }: { data: DashboardView; onCre
                       <div className="truncate text-sm font-semibold">{f.surname}</div>
                       {inv.items.length > 1 && <div className="truncate text-xs text-sky">{inv.items.slice(1).map((i) => i.description).join(", ")}</div>}
                     </div>
-                    <span className="led text-sm font-semibold">{money(inv.amountCents)}</span>
+                    <span className="text-right">
+                      <span className="led block text-sm font-semibold">{money(inv.amountCents)}</span>
+                      {inv.prepaidCents > 0 && <span className="block text-[0.7rem] text-turf-bright">{money(inv.prepaidCents)} already paid</span>}
+                    </span>
                   </li>
                 );
               })}
             </ul>
           </div>
 
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button className="btn btn-ghost sm:flex-1" disabled={phase !== "idle"} onClick={() => setPreview(null)}>
+          <div className="flex flex-col-reverse gap-2">
+            <button className="btn btn-ghost" disabled={phase !== "idle"} onClick={() => setPreview(null)}>
               <Undo2 size={16} /> Edit message
             </button>
-            <button className="btn btn-turf sm:flex-[2]" disabled={phase !== "idle" || billable === 0} onClick={send}>
+            <button className="btn btn-turf" disabled={phase !== "idle" || billable === 0} onClick={send}>
               {phase === "sending" ? <Spinner /> : <Send size={16} />}
               {phase === "sending" ? `Creating ${billable} PayPal invoices…` : `Send ${billable} PayPal invoices`}
             </button>

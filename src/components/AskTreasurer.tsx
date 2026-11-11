@@ -22,7 +22,7 @@ const SUGGESTIONS = [
   "Which families still owe for uniforms?",
 ];
 
-export function AskTreasurer({ enabled }: { enabled: boolean }) {
+export function AskTreasurer({ enabled, hideOnMobile = false }: { enabled: boolean; hideOnMobile?: boolean }) {
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [q, setQ] = useState("");
@@ -53,13 +53,12 @@ export function AskTreasurer({ enabled }: { enabled: boolean }) {
   return (
     <>
       <button
-        className="btn btn-primary fixed right-4 bottom-4 z-30 !min-h-14 rounded-full !px-5 shadow-2xl sm:right-6 sm:bottom-6"
+        className={`btn btn-primary fixed right-4 bottom-4 z-30 !min-h-14 !min-w-14 rounded-full !px-4 shadow-2xl sm:!px-5 sm:right-6 sm:bottom-6 ${hideOnMobile ? "max-sm:!hidden" : ""}`}
         onClick={() => setOpen(true)}
         aria-label="Ask the treasurer"
         style={{ display: open ? "none" : undefined }}
       >
         <Sparkles size={18} /> <span className="hidden sm:inline">Ask the treasurer</span>
-        <span className="sm:hidden">Ask</span>
       </button>
       {open && (
         <aside

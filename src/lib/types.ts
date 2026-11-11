@@ -42,7 +42,9 @@ export interface Team {
   referees: Referee[];
 }
 
-export type ShareReason = "share" | "scholarship" | "custom" | "excluded";
+export type ShareReason = "share" | "scholarship" | "adjusted" | "covered" | "excluded";
+
+export type PrepaidMethod = "cash" | "venmo" | "zelle" | "check" | "other";
 
 /** One family's obligation for a charge, and who pays it. */
 export interface ChargeLine {
@@ -63,7 +65,10 @@ export interface Charge {
   rulesSummary: string[];
   warnings: string[];
   lines: ChargeLine[];
-  absorbedCents: number; // amount the team fund covers (scholarships)
+  absorbedCents: number; // amount the team fund covers (scholarships, discounts)
+  prepaid?: { familyId: string; amountCents: number; method: PrepaidMethod }[]; // paid outside PayPal before invoicing
+  roundingCents?: number; // pennies of rounding that go to the team fund
+  clientKey?: string; // idempotency key from the treasurer's browser
 }
 
 export type InvoiceStatus = "DRAFT" | "SENT" | "PAID" | "CANCELLED";
@@ -97,7 +102,7 @@ export type GameStatus = "scheduled" | "final";
 export interface Payout {
   batchId: string;
   itemId: string | null;
-  status: "PENDING" | "SUCCESS" | "FAILED" | "UNCLAIMED";
+  status: "PROCESSING" | "PENDING" | "SUCCESS" | "FAILED" | "UNCLAIMED";
   amountCents: number;
   createdAt: string;
   paidAt: string | null;
@@ -123,6 +128,7 @@ export type LedgerEventType =
   | "payout.created"
   | "payout.succeeded"
   | "payout.failed"
+  | "payment.offline"
   | "opening.balance"
   | "expense";
 

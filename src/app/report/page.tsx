@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Season report · Sideline" };
 
 function category(type: string, summary: string): string {
   if (type === "opening.balance") return "Carried over";
-  if (type === "invoice.paid") return "Family dues";
+  if (type === "invoice.paid" || type === "payment.offline") return "Family dues";
   if (type === "payout.succeeded") return "Referees";
   if (summary.startsWith("Scholarship")) return "Scholarships";
   if (/uniform/i.test(summary)) return "Uniforms";
@@ -21,11 +21,29 @@ function category(type: string, summary: string): string {
 export default function ReportPage() {
   const state = readState();
   const s = teamSummary(state);
-  // Public page: amounts and family surnames only, never emails.
-  const rows: ReportRow[] = state.events
-    .filter((e) => e.amountCents !== 0)
-    .sort((a, b) => a.at.localeCompare(b.at))
-    .map((e) => ({ date: e.at, what: e.summary, category: category(e.type, e.summary), cents: e.amountCents, viaPayPal: e.source.startsWith("paypal") || e.type === "invoice.paid" || e.type === "payout.succeeded" }));
+  // Public page: who paid how much is private to the treasurer, so family payments are
+  // rolled up per charge per day ("Fresno Tournament: 4 family payments"). Never emails.
+  const chargeOf = (ref: string | null) => state.charges.find((c) => c.id === ref || state.invoices.some((i) => i.id === ref && i.chargeId === c.id));
+  const rolled = new Map<string, ReportRow & { n: number }>();
+  const rows: ReportRow[] = [];
+  for (const e of [...state.events].filter((e) => e.amountCents !== 0).sort((a, b) => a.at.localeCompare(b.at))) {
+    if (e.type === "invoice.paid" || e.type === "payment.offline") {
+      const charge = chargeOf(e.ref);
+      const key = `${charge?.id ?? "other"}|${e.at.slice(0, 10)}`;
+      const r = rolled.get(key);
+      if (r) {
+        r.cents += e.amountCents;
+        r.n += 1;
+        r.what = `${charge?.title ?? "Team dues"}: ${r.n} family payments`;
+      } else {
+        const row = { date: e.at, what: `${charge?.title ?? "Team dues"}: 1 family payment`, category: "Family dues", cents: e.amountCents, viaPayPal: e.type === "invoice.paid", n: 1 };
+        rolled.set(key, row);
+        rows.push(row);
+      }
+      continue;
+    }
+    rows.push({ date: e.at, what: e.summary, category: category(e.type, e.summary), cents: e.amountCents, viaPayPal: e.source.startsWith("paypal") || e.type === "payout.succeeded" });
+  }
 
   const byCategory = new Map<string, number>();
   for (const r of rows) if (r.cents < 0) byCategory.set(r.category, (byCategory.get(r.category) ?? 0) - r.cents);
@@ -68,7 +86,7 @@ export default function ReportPage() {
               <li key={c.chargeId} className="flex flex-wrap items-baseline justify-between gap-2 py-3">
                 <span className="font-semibold">{c.title}</span>
                 <span className="text-sm text-chalk-dim">
-                  <span className="led text-turf-bright">{formatCents(c.collectedCents)}</span> of {formatCents(c.billedCents)} from {c.paid} of {c.invoices} families
+                  <span className="led text-turf-bright">{formatCents(c.collectedCents)}</span> of {formatCents(c.billedCents)} · {c.paid} of {c.invoices} families paid
                   {c.absorbedCents > 0 && ` · ${formatCents(c.absorbedCents)} scholarship covered by the team`}
                 </span>
               </li>

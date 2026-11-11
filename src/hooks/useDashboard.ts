@@ -15,7 +15,7 @@ export function useDashboard(intervalMs = 2000) {
 
   const pushToast = useCallback((t: Omit<Toast, "id">) => {
     const id = Date.now() + Math.random();
-    setToasts((ts) => [...ts.slice(-3), { ...t, id }]);
+    setToasts((ts) => [...ts.slice(window.innerWidth < 640 ? -1 : -3), { ...t, id }]);
     setTimeout(() => setToasts((ts) => ts.filter((x) => x.id !== id)), 5200);
   }, []);
 
@@ -33,13 +33,21 @@ export function useDashboard(intervalMs = 2000) {
           const ids = newlyPaid.map((i) => i.id);
           setFreshlyPaid((s) => new Set([...s, ...ids]));
           setTimeout(() => setFreshlyPaid((s) => new Set([...s].filter((id) => !ids.includes(id)))), 2400);
-          for (const inv of newlyPaid) {
-            const fam = view.team.families.find((f) => f.id === inv.payerFamilyId);
+          if (newlyPaid.length > 2) {
             pushToast({
               tone: "turf",
-              title: `${fam?.surname ?? ""} family paid`,
-              body: `${formatUsd(inv.amountCents)} via ${inv.paidVia ?? "PayPal"} · webhook received`,
+              title: `${newlyPaid.length} families paid`,
+              body: `${formatUsd(newlyPaid.reduce((a, i) => a + i.amountCents, 0))} · PayPal webhooks received`,
             });
+          } else {
+            for (const inv of newlyPaid) {
+              const fam = view.team.families.find((f) => f.id === inv.payerFamilyId);
+              pushToast({
+                tone: "turf",
+                title: `${fam?.surname ?? ""} family paid`,
+                body: `${formatUsd(inv.amountCents)} via ${inv.paidVia ?? "PayPal"} · webhook received`,
+              });
+            }
           }
         }
       }

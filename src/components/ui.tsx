@@ -97,7 +97,7 @@ export function Toasts({ toasts }: { toasts: Toast[] }) {
     sky: "border-sky/50 [&_.t]:text-sky",
   };
   return (
-    <div aria-live="polite" className="pointer-events-none fixed inset-x-3 bottom-24 z-50 flex flex-col items-center gap-2 sm:inset-x-auto sm:right-6 sm:bottom-24 sm:items-end">
+    <div aria-live="polite" className="pointer-events-none fixed inset-x-3 top-16 z-50 flex flex-col items-center gap-2 sm:inset-x-auto sm:top-auto sm:right-6 sm:bottom-24 sm:items-end">
       {toasts.map((t) => (
         <div key={t.id} className={clsx("rise pointer-events-auto w-full max-w-sm rounded-xl border bg-night-800/95 px-4 py-3 shadow-2xl", tone[t.tone])}>
           <div className="t font-display text-sm font-semibold uppercase tracking-wider">{t.title}</div>
