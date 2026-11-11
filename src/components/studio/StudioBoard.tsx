@@ -151,7 +151,7 @@ export default function StudioBoard({ initial }: { initial: StudioTables }) {
   }, []);
 
   return (
-    <div className="flex h-dvh flex-col bg-night-900">
+    <div className="flex h-dvh flex-col overflow-clip bg-night-900">
       <TopBar data={null} active="studio" />
       <div className="flex flex-wrap items-center gap-2 border-b border-chalk/[0.08] bg-night-850 px-3 py-2 sm:px-6">
         <div className="flex min-w-0 gap-1 overflow-x-auto" role="tablist" aria-label="Dashboard pages">

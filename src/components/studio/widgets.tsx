@@ -58,7 +58,8 @@ function ScoreboardWidget({ widgetApi, dataMapping, context }: AgWidgetParams) {
   const owed = rows.reduce((a, r) => a + num(r[away.key]), 0);
   const billed = collected + owed;
   const pct = billed > 0 ? Math.round((collected / billed) * 100) : 0;
-  const families = roster ? rows.length : 0;
+  // The roster only means something when it lists the families: one row is a mis-mapped field, not a team.
+  const families = roster && rows.length > 1 ? rows.length : 0;
   const paidUp = roster ? rows.filter((r) => num(r[away.key]) === 0).length : 0;
   const team = (context as { team?: { shortName?: string } } | undefined)?.team?.shortName ?? "HOME";
 
@@ -68,7 +69,7 @@ function ScoreboardWidget({ widgetApi, dataMapping, context }: AgWidgetParams) {
         <div className="sl-sb-label">{team} · {home.name}</div>
         <div className="sl-sb-digits sl-sb-green">{money(collected)}</div>
       </div>
-      {roster ? (
+      {families > 0 ? (
         <div className="sl-sb-mid">
           <div className="sl-sb-label">Paid in</div>
           <div className="sl-sb-clock">{pct}%</div>
