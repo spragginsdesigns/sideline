@@ -8,7 +8,7 @@ The AI treasurer for youth sports teams: paste the coach's group chat, every fam
 ## Links
 - Live demo: https://sideline.172-235-32-223.sslip.io (runs on the real PayPal sandbox; the badge in the app says which mode is running)
 - Code (MIT): https://github.com/spragginsdesigns/sideline
-- Video: https://youtu.be/DSckzIyTj7I
+- Video: https://youtu.be/fvb8oSl9lVQ
 
 ## Inspiration
 Every youth and rec team has one volunteer parent who ends up as treasurer: collecting dues from 12 to 20 families, handling the exceptions (siblings, a scholarship kid, one family covering another), paying referees, and answering "where did our money go?". It runs on a group chat, Venmo requests and a spreadsheet. US families spend more than $40 billion a year on kids' sports, and the money still moves by group text.
