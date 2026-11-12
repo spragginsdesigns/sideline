@@ -88,7 +88,7 @@ function GameRow({ game, data, isToday, onError }: { game: Game; data: Dashboard
         )}
       </div>
       {!game.payout && past && (
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <label className="sr-only" htmlFor={`us-${game.id}`}>
             {data.team.shortName} score
           </label>
