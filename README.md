@@ -2,7 +2,7 @@
 
 **The AI treasurer for youth and rec sports teams, built on PayPal.**
 
-**Live demo:** https://sideline.172-235-32-223.sslip.io (runs Sideline's PayPal simulator until sandbox keys are configured; the banner says so). Try the board, paste a group-chat message, open a family's pay page on your phone, then open **Studio** and ask the treasurer agent to chart who still owes.
+**Live demo:** https://sideline.172-235-32-223.sslip.io (runs on the real PayPal sandbox: Invoicing v2 invoices, signed webhooks and Payouts; the badge says which mode is running). Try the board, paste a group-chat message, open a family's pay page on your phone, then open **Studio** and ask the treasurer agent to chart who still owes.
 
 Every youth team has a volunteer parent collecting dues from 12 to 20 families. They also handle the exceptions (siblings, a scholarship kid, one family covering for another), pay the referees, and answer "where did our money go?". Today that runs on a group chat, Venmo requests and a spreadsheet.
 

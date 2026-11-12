@@ -6,9 +6,9 @@ Paste-ready text for the PayPal AI Hackathon form. Facts only; edit freely.
 The AI treasurer for youth sports teams: paste the coach's group chat, every family gets a PayPal invoice, and an AG Studio scoreboard builds itself as they pay.
 
 ## Links
-- Live demo: https://sideline.172-235-32-223.sslip.io (PayPal simulator mode until sandbox keys are added; labelled in the app)
+- Live demo: https://sideline.172-235-32-223.sslip.io (runs on the real PayPal sandbox; the badge in the app says which mode is running)
 - Code (MIT): https://github.com/spragginsdesigns/sideline
-- Video: <YouTube link>
+- Video: https://youtu.be/DSckzIyTj7I
 
 ## Inspiration
 Every youth and rec team has one volunteer parent who ends up as treasurer: collecting dues from 12 to 20 families, handling the exceptions (siblings, a scholarship kid, one family covering another), paying referees, and answering "where did our money go?". It runs on a group chat, Venmo requests and a spreadsheet. US families spend more than $40 billion a year on kids' sports, and the money still moves by group text.
@@ -41,13 +41,23 @@ Every youth and rec team has one volunteer parent who ends up as treasurer: coll
 Real group chats are messy: half-Spanish messages, "she already paid half in cash", "covering half of the Vangs". Early versions let the model do arithmetic and got "half" wrong for a two-player family; the fix was to have the model report rules and fractions only, with every cent computed by a tested engine.
 
 ## Accomplishments that we're proud of
-- Money that reconciles to the cent, with 30 unit tests, including that the Studio dashboard's totals equal the ledger's.
+- Money that reconciles to the cent, with 36 unit tests, including that the Studio dashboard's totals equal the ledger's.
 - A dashboard that builds itself: one sentence to our agent, and AG Studio's agents plan, place and wire up the widgets on live PayPal data.
 - Reminders a parent actually wants to receive, in their own language.
 - Safe to click twice: no double invoices, no double referee payouts.
 
 ## What we learned
 Let the AI read and write words; keep it away from the math.
+
+## Where it stands today
+Sideline runs end to end on the real PayPal sandbox, and the demo video was recorded on it. In the recorded run on Nov 11, 2026:
+- 12 invoices were created and sent through Invoicing v2, each with PayPal's QR code (for example INV2-VEJJ-SQ5B-2KKY-2CGB, $56.26).
+- A buyer paid one by card on PayPal's own invoice page. PayPal's signed INVOICING.INVOICE.PAID webhook (WH-6FU587433B5938032-2VR49330A0738330A) credited it on the board about 11 seconds later.
+- During the AG Studio scene, two more sandbox payments arrived by signed webhook and the scoreboard and jerseys updated live, with no reload.
+- Late families' nudges went out as real PayPal invoice reminders.
+- The referee was paid through Payouts v1 (batch XQENV8Q3ZVYBS). The demo referee's email has no PayPal account, so PayPal holds that payout as UNCLAIMED until it is claimed, and the app says so.
+
+The hosted demo runs on the same sandbox app. The built-in simulator is still there for anyone who runs the repo without PayPal keys, and the app always shows which mode it is in.
 
 ## What's next for Sideline
 Multi-team leagues, recurring dues, PayPal Venmo-first checkout for teen-heavy teams, and an end-of-season export for the league.
