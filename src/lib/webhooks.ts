@@ -29,10 +29,24 @@ function obj(v: unknown): Record<string, unknown> {
 }
 
 export function handlePayPalEvent(event: IncomingEvent, source: EventSource): Promise<HandleResult> {
-  return mutate((state) => apply(state, event, source));
+  return mutate((state) => applyPayPalEvent(state, event, source));
 }
 
-function apply(state: AppState, event: IncomingEvent, source: EventSource): HandleResult {
+/**
+ * The invoice an Invoicing event is about. PayPal's Invoicing v2 webhooks nest it
+ * (resource.invoice.{id, payments}); the sync poll builds the flat shape (resource.{id, payments}).
+ */
+function invoiceResource(res: Record<string, unknown>): Record<string, unknown> {
+  const nested = obj(res.invoice);
+  return str(nested.id) ? nested : res;
+}
+
+/** Find our invoice by its PayPal id. An event without an id never matches (seeded invoices have none). */
+function findByPayPalId(state: AppState, ppId: string | null) {
+  return ppId ? state.invoices.find((i) => i.paypalInvoiceId === ppId) : undefined;
+}
+
+export function applyPayPalEvent(state: AppState, event: IncomingEvent, source: EventSource): HandleResult {
   if (!event?.id || !event?.event_type) return { handled: false, duplicate: false, note: "malformed event" };
   if (state.processedWebhookIds.includes(event.id)) return { handled: false, duplicate: true, note: "already processed" };
 
@@ -42,8 +56,9 @@ function apply(state: AppState, event: IncomingEvent, source: EventSource): Hand
 
   switch (event.event_type) {
     case "INVOICING.INVOICE.PAID": {
-      const ppId = str(res.id);
-      const inv = state.invoices.find((i) => i.paypalInvoiceId === ppId);
+      const remote = invoiceResource(res);
+      const ppId = str(remote.id);
+      const inv = findByPayPalId(state, ppId);
       if (!inv) {
         result = { handled: false, duplicate: false, note: `no local invoice for ${ppId}` };
         break;
@@ -52,7 +67,7 @@ function apply(state: AppState, event: IncomingEvent, source: EventSource): Hand
         result = { handled: false, duplicate: true, note: "invoice already paid" };
         break;
       }
-      const payments = obj(res.payments);
+      const payments = obj(remote.payments);
       const paid = decimalToCents(str(obj(payments.paid_amount).value) ?? "0") || inv.amountCents;
       const tx = Array.isArray(payments.transactions) ? obj(payments.transactions[0]) : {};
       inv.status = "PAID";
@@ -75,7 +90,7 @@ function apply(state: AppState, event: IncomingEvent, source: EventSource): Hand
       break;
     }
     case "INVOICING.INVOICE.CANCELLED": {
-      const inv = state.invoices.find((i) => i.paypalInvoiceId === str(res.id));
+      const inv = findByPayPalId(state, str(invoiceResource(res).id));
       if (inv && inv.status !== "CANCELLED") {
         inv.status = "CANCELLED";
         state.events.push({ id: newId("e"), at: new Date().toISOString(), type: "invoice.cancelled", summary: `Invoice ${inv.paypalInvoiceNumber} cancelled`, amountCents: 0, source: evSource, ref: inv.id, paypalEventId: event.id });
