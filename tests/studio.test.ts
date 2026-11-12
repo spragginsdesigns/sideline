@@ -71,6 +71,12 @@ test("referee payouts show as paid by PayPal only once the payout succeeded", ()
     ["Paid by PayPal", "Paid by PayPal", "Not yet", "Not yet", "Not yet"],
   );
   assert.equal(sum(t.games.map((g) => g.paid_out)), 90);
+  // A payout PayPal is holding for the referee to accept is sent, not failed, and not yet paid out.
+  const state = seedState();
+  state.games[2].payout = { batchId: "B", itemId: "I", status: "UNCLAIMED", amountCents: 4500, createdAt: new Date().toISOString(), paidAt: null };
+  const held = studioTables(state, "live").games[2];
+  assert.equal(held.payout, "Sent, not yet claimed");
+  assert.equal(held.paid_out, 0);
 });
 
 test("studio conversation items map onto Responses API input items", () => {

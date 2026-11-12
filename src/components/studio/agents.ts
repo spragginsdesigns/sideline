@@ -70,7 +70,7 @@ function treasurerTools(api: AgStudioApi): AgAiTool[] {
 const HOUSE_RULES = `House rules for this dashboard (Sideline, a youth sports team's money):
 - In a grid (table), list text and date fields with NO aggregation, so the table has one row per record. Only dollar amounts and counts take an aggregation, and that is sum. Never use first, last, min or max on a text or date field.
 - Amounts are US dollars. Titles are short and plain: "Referee payouts", not "Referee Payout Analysis".
-- Category values are exact. In Family dues, status is Paid, Open, Late, Team fund or Covered. In the Team ledger, direction is "Money in" or "Money out". In Games & referees, the PayPal payout is "Paid by PayPal", "In flight", "Failed" or "Not yet". Read a field's description in the schema before filtering on it.
+- Category values are exact. In Family dues, status is Paid, Open, Late, Team fund or Covered. In the Team ledger, direction is "Money in" or "Money out". In Games & referees, the PayPal payout is "Paid by PayPal", "Sent, not yet claimed", "In flight", "Failed" or "Not yet". Read a field's description in the schema before filtering on it.
 - Add a filter only when the request needs one. Spending has its own table: for spending by category, sum Spent by Category in the Spending table, with no filter.
 - Make widgets big enough to read. The page is 24 columns wide: a chart or table is at least 12 columns wide and 14 rows tall, and the first widget on an empty page spans all 24 columns.
 - A widget that shows no data is not finished. If a query returns no rows, fix or remove its filter before reporting back.

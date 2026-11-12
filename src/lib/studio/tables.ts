@@ -65,7 +65,7 @@ export interface GameRow {
   result: string;
   referee: string;
   referee_fee: number;
-  payout: "Paid by PayPal" | "In flight" | "Failed" | "Not yet";
+  payout: "Paid by PayPal" | "Sent, not yet claimed" | "In flight" | "Failed" | "Not yet";
   paid_out: number;
 }
 
@@ -174,7 +174,8 @@ export function studioTables(state: AppState, mode: "live" | "simulator", now = 
       result: g.score ? `${g.score.us}-${g.score.them}` : "Scheduled",
       referee: ref?.name ?? "",
       referee_fee: dollars(ref?.feeCents ?? 0),
-      payout: !p ? "Not yet" : p.status === "SUCCESS" ? "Paid by PayPal" : p.status === "FAILED" || p.status === "UNCLAIMED" ? "Failed" : "In flight",
+      // UNCLAIMED is not a failure: PayPal has sent the money and holds it until the referee accepts it.
+      payout: !p ? "Not yet" : p.status === "SUCCESS" ? "Paid by PayPal" : p.status === "UNCLAIMED" ? "Sent, not yet claimed" : p.status === "FAILED" ? "Failed" : "In flight",
       paid_out: p?.status === "SUCCESS" ? dollars(p.amountCents) : 0,
     };
   });

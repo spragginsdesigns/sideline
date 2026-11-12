@@ -55,7 +55,7 @@ export const GAMES_FIELDS: AgFieldDefinition[] = [
   { id: "result", name: "Result", format: "textFormat" },
   { id: "referee", name: "Referee", format: "textFormat" },
   { id: "referee_fee", name: "Referee fee", format: "currencyFormat", formatOptions: usd },
-  { id: "payout", name: "PayPal payout", format: "textFormat", description: "Exactly one of: Paid by PayPal, In flight, Failed, Not yet." },
+  { id: "payout", name: "PayPal payout", format: "textFormat", description: "Exactly one of: Paid by PayPal, Sent, not yet claimed, In flight, Failed, Not yet." },
   { id: "paid_out", name: "Paid out", format: "currencyFormat", formatOptions: usd },
 ] as AgFieldDefinition[];
 
