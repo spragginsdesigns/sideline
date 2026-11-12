@@ -112,10 +112,13 @@ export function seedState(now = Date.now()): AppState {
       } satisfies Invoice;
     });
 
+  // Today's game has always kicked off when the demo is (re)seeded, so "Final · pay ref" works at
+  // any hour: 9am, or an hour ago before 10am, never before midnight (it stays "today").
+  const todayKickoff = new Date(Math.min(Date.parse(iso(0, 9)), Math.max(Date.parse(iso(0, 0)), now - 3600_000))).toISOString();
   const games: Game[] = [
     { id: "g-1", opponent: "Clovis Comets", date: iso(-15, 9), field: "Woodward Park Field 3", refereeId: "r-okafor", status: "final", score: { us: 3, them: 1 }, payout: { batchId: "SEED-PAYOUT-1", itemId: "SEED-ITEM-1", status: "SUCCESS", amountCents: 4500, createdAt: iso(-15, 11), paidAt: iso(-15, 11) } },
     { id: "g-2", opponent: "Madera Mustangs", date: iso(-8, 9), field: "Woodward Park Field 1", refereeId: "r-martinez", status: "final", score: { us: 2, them: 2 }, payout: { batchId: "SEED-PAYOUT-2", itemId: "SEED-ITEM-2", status: "SUCCESS", amountCents: 4500, createdAt: iso(-8, 11), paidAt: iso(-8, 11) } },
-    { id: "g-3", opponent: "Visalia Vipers", date: iso(0, 9), field: "Riverside Fields 2", refereeId: "r-okafor", status: "scheduled", score: null, payout: null },
+    { id: "g-3", opponent: "Visalia Vipers", date: todayKickoff, field: "Riverside Fields 2", refereeId: "r-okafor", status: "scheduled", score: null, payout: null },
     { id: "g-4", opponent: "Sanger Storm", date: iso(7, 10), field: "Woodward Park Field 3", refereeId: "r-martinez", status: "scheduled", score: null, payout: null },
     { id: "g-5", opponent: "Fresno Tournament: pool play", date: iso(13, 8), field: "Fresno Regional Sports Complex", refereeId: "r-okafor", status: "scheduled", score: null, payout: null },
   ];

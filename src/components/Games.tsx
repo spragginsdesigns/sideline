@@ -24,7 +24,8 @@ function GameRow({ game, data, isToday, onError }: { game: Game; data: Dashboard
   const [us, setUs] = useState("");
   const [them, setThem] = useState("");
   const [busy, setBusy] = useState(false);
-  const past = new Date(game.date).getTime() <= Date.now() + 6 * 3600_000;
+  // Same window finalizeGame() accepts, so the form never offers a payout the server refuses.
+  const past = new Date(game.date).getTime() <= Date.now() + 3 * 3600_000;
 
   async function finalize() {
     setBusy(true);
