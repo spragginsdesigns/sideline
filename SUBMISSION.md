@@ -6,7 +6,7 @@ Paste-ready text for the PayPal AI Hackathon form. Facts only; edit freely.
 The AI treasurer for youth sports teams: paste the coach's group chat, every family gets a PayPal invoice, and an AG Studio scoreboard builds itself as they pay.
 
 ## Links
-- Live demo: https://sideline.172-235-32-223.sslip.io (runs on the real PayPal sandbox; the badge in the app says which mode is running)
+- Live demo: retired after judging; see the video, or run it locally from the README
 - Code (MIT): https://github.com/spragginsdesigns/sideline
 - Video: https://youtu.be/fvb8oSl9lVQ
 
